@@ -1,0 +1,25 @@
+# Python
+__pycache__
+*.pyc
+*.egg-info
+dist
+
+# Log
+*.log
+*.log.*
+*.json
+*.jsonl
+
+# Data
+*.tar.gz
+# Other
+.DS_Store
+wandb
+output
+checkpoints
+datasets
+finetune/tasks
+ckpts*
+
+.ipynb_checkpoints
+*.ipynb
