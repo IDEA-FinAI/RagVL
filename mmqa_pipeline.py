@@ -101,7 +101,7 @@ def clip_rerank_generate(
 
     hard_examples = {}
     probabilities = {"gt": [], "false": []}
-    with open("MMQA_ImageQ_metadata.json", "r") as f:
+    with open("datasets/MMQA_ImageQ_metadata.json", "r") as f:
         metadata = json.load(f)
 
     with open(save_path, "w") as f:
@@ -125,7 +125,7 @@ def clip_rerank_generate(
 
             if not rerank_off:
                 for id in retrieved_imgs:
-                    img_path = "playground/data/MMQA_imgs/" + metadata[id]["path"]
+                    img_path = "finetune/tasks/MMQA_imgs/" + metadata[id]["path"]
                     img_caption = metadata[id]["caption"]
 
                     if use_caption:
@@ -184,7 +184,7 @@ def clip_rerank_generate(
             IMAGE_PATH = ""
             for i in range(len(filtered_imgs)):
                 IMAGE_PATH += (
-                    "playground/data/MMQA_imgs/" + metadata[filtered_imgs[i]]["path"]
+                    "finetune/tasks/MMQA_imgs/" + metadata[filtered_imgs[i]]["path"]
                 )
 
                 if i != len(filtered_imgs) - 1:
@@ -241,9 +241,9 @@ def clip_rerank_generate(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--reranker_model", type=str, default="lora_caption")
-    parser.add_argument("--generator_model", type=str, default="base_sft")
-    parser.add_argument("--datasets", type=str, default="val")
+    parser.add_argument("--reranker_model", type=str, default="caption_lora")
+    parser.add_argument("--generator_model", type=str, default="noise_injected_lora")
+    parser.add_argument("--datasets", type=str, default="test")
     parser.add_argument("--filter", type=float, default=0)
     parser.add_argument("--rerank_off", default=False, action="store_true")
     parser.add_argument("--clip_topk", type=int, default=20)
@@ -251,12 +251,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    save_path = (
+    save_path = "mmqa_" + (
         "_".join(
             [
                 attr
                 for attr in [
                     "answer_set",
+                    args.reranker_model,
                     args.generator_model,
                     str(args.filter)[2:],
                     "clip_top" + str(args.clip_topk) if args.clip_topk != 20 else "",
@@ -272,38 +273,18 @@ if __name__ == "__main__":
     ################### reranker_model ###################
     if args.reranker_model == "base":
         reranker_model_path = "liuhaotian/llava-v1.5-13b"
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=reranker_model_path,
-            model_base=None,
-            model_name=get_model_name_from_path(reranker_model_path),
-        )
-    elif args.reranker_model == "lora":
-        reranker_model_path = (
-            "checkpoints/multimodalqa/llava-v1.5-13b-2epoch-reranker-lora"
-        )
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=reranker_model_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(reranker_model_path),
-        )
 
-    elif args.reranker_model == "lora_caption":
-        reranker_model_path = (
-            "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-mmqa-reranker-lora-caption"
-        )
+    elif args.reranker_model == "caption_lora":
+        reranker_model_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-16batch_size-mmqa-reranker-caption-lora"
 
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=reranker_model_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(reranker_model_path),
-        )
-    elif args.reranker_model == "blend_lora_caption":
-        reranker_model_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-blend-lora-caption-original"
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=reranker_model_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(reranker_model_path),
-        )
+    elif args.reranker_model == "blend_caption_lora":
+        reranker_model_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-blend-caption-lora"
+
+    tokenizer, mm_model, image_processor, _ = load_pretrained_model(
+        model_path=reranker_model_path,
+        model_base="liuhaotian/llava-v1.5-13b",
+        model_name=get_model_name_from_path(reranker_model_path),
+    )
 
     ################### generator_model ###################
     if args.generator_model == "base":
@@ -313,42 +294,35 @@ if __name__ == "__main__":
             model_base=None,
             model_name=get_model_name_from_path(generator_path),
         )
-    elif args.generator_model == "base_sft":
-        generator_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-original-lora"
-        _, generator_model, _, _ = load_pretrained_model(
-            model_path=generator_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(generator_path),
-        )
-    elif args.generator_model == "blend_sft":
+    elif args.generator_model == "blend_lora":
         generator_path = reranker_model_path
         generator_model = mm_model
 
-    elif args.generator_model == "base_distortion_sft":
-        generator_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-contrastive-distortion-original-lora"
+    elif args.generator_model == "noise_injected_lora":
+        generator_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-noise-injected-lora"
         _, generator_model, _, _ = load_pretrained_model(
             model_path=generator_path,
             model_base="liuhaotian/llava-v1.5-13b",
             model_name=get_model_name_from_path(generator_path),
         )
 
-    if args.datasets == "val":
-        with open("MMQA_test_ImageQ.json", "r") as f:
+    if args.datasets == "test":
+        with open("datasets/MMQA_test_ImageQ.json", "r") as f:
             val_dataset = json.load(f)
 
-        with open("MMQA_test_ImageQ_index_to_id.json", "r") as f:
+        with open("datasets/MMQA_test_ImageQ_index_to_id.json", "r") as f:
             index_to_image_id = json.load(f)
 
-        index = faiss.read_index("MMQA_test_ImageQ.index")
+        index = faiss.read_index("datasets/faiss_index/MMQA_test_ImageQ.index")
 
     elif args.datasets == "dev":
-        with open("MMQA_dev_ImageQ.json", "r") as f:
+        with open("datasets/MMQA_dev_ImageQ.json", "r") as f:
             val_dataset = json.load(f)
 
-        with open("MMQA_dev_ImageQ_index_to_id.json", "r") as f:
+        with open("datasets/MMQA_dev_ImageQ_index_to_id.json", "r") as f:
             index_to_image_id = json.load(f)
 
-        index = faiss.read_index("MMQA_dev_ImageQ.index")
+        index = faiss.read_index("datasets/faiss_index/MMQA_dev_ImageQ.index")
 
     with torch.no_grad():
         clip_rerank_generate(

@@ -100,11 +100,11 @@ def clip_rerank_generate(
     hard_examples = {}
     probabilities = {"gt": [], "false": []}
     if use_caption:
-        if mode == "val":
-            with open("WebQA_vanilla_caption_val_image.json", "r") as f:
+        if mode == "test":
+            with open("datasets/WebQA_caption_test.json", "r") as f:
                 captions = json.load(f)
         elif mode == "dev" or mode == "train":
-            with open("WebQA_vanilla_caption_train_dev_image.json", "r") as f:
+            with open("datasets/WebQA_caption_train_dev.json", "r") as f:
                 captions = json.load(f)
 
     with open(save_path, "w") as f:
@@ -129,10 +129,10 @@ def clip_rerank_generate(
 
             if not rerank_off:
                 for id in retrieved_imgs:
-                    if mode == "val":
-                        img_path = "val_image/" + id + ".png"
+                    if mode == "test":
+                        img_path = "datasets/val_image/" + id + ".png"
                     elif mode == "dev" or mode == "train":
-                        img_path = "playground/data/train_img/" + id + ".png"
+                        img_path = "finetune/tasks/train_img/" + id + ".png"
 
                     if use_caption:
                         query = (
@@ -188,11 +188,11 @@ def clip_rerank_generate(
 
             IMAGE_PATH = ""
             for i in range(len(filtered_imgs)):
-                if mode == "val":
-                    IMAGE_PATH += "val_image/" + filtered_imgs[i] + ".png"
+                if mode == "test":
+                    IMAGE_PATH += "datasets/val_image/" + filtered_imgs[i] + ".png"
                 elif mode == "dev":
                     IMAGE_PATH += (
-                        "playground/data/train_img/" + filtered_imgs[i] + ".png"
+                        "finetune/tasks/train_img/" + filtered_imgs[i] + ".png"
                     )
                 if i != len(filtered_imgs) - 1:
                     IMAGE_PATH += ","
@@ -227,7 +227,7 @@ def clip_rerank_generate(
                 "retrieved_images": top_sorted_imgs,
             }
             new_data = json.dumps({guid: output_json})[1:-1]
-            f.write(f"    {new_data},\n")  # 写入缩进的键值对
+            f.write(f"    {new_data},\n")
 
         f.write("}")
 
@@ -252,9 +252,9 @@ def clip_rerank_generate(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--reranker_model", type=str, default="lora_caption")
-    parser.add_argument("--generator_model", type=str, default="base_sft")
-    parser.add_argument("--datasets", type=str, default="val")
+    parser.add_argument("--reranker_model", type=str, default="caption_lora")
+    parser.add_argument("--generator_model", type=str, default="noise_injected_lora")
+    parser.add_argument("--datasets", type=str, default="test")
     parser.add_argument("--filter", type=float, default=0)
     parser.add_argument("--rerank_off", default=False, action="store_true")
     parser.add_argument("--clip_topk", type=int, default=20)
@@ -262,12 +262,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    save_path = (
+    save_path = "webqa_" + (
         "_".join(
             [
                 attr
                 for attr in [
                     "answer_set",
+                    args.reranker_model,
                     args.generator_model,
                     str(args.filter)[2:],
                     "clip_top" + str(args.clip_topk) if args.clip_topk != 20 else "",
@@ -282,38 +283,24 @@ if __name__ == "__main__":
 
     ################### reranker_model ###################
 
-    if args.reranker_model == "lora":
-        model_path = "checkpoints/web/llava-v1.5-13b-task-lora-1"
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=model_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(model_path),
+    if args.reranker_model == "base":
+        model_path = "liuhaotian/llava-v1.5-13b"
+
+    elif args.reranker_model == "caption_lora":
+        model_path = "checkpoints/web/llava-v1.5-13b-2epoch-16batch_size-webqa-reranker-caption-lora"
+
+    elif args.reranker_model == "blend_caption_lora":
+        model_path = (
+            "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-blend-caption-lora"
         )
 
-    elif args.reranker_model == "base":
-        model_path = "liuhaotian/llava-v1.5-13b"
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=model_path,
-            model_base=None,
-            model_name=get_model_name_from_path(model_path),
-        )
-    elif args.reranker_model == "lora_caption":
-        model_path = "checkpoints/web/llava-v1.5-13b-2epoch-reranker-lora-caption"
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=model_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(model_path),
-        )
-    elif args.reranker_model == "blend_lora_caption":
-        model_path = "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-blend-long-answer-lora-caption"
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=model_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(model_path),
-        )
+    tokenizer, mm_model, image_processor, _ = load_pretrained_model(
+        model_path=model_path,
+        model_base="liuhaotian/llava-v1.5-13b",
+        model_name=get_model_name_from_path(model_path),
+    )
 
     ################### generator_model ###################
-
     if args.generator_model == "base":
         generator_path = "liuhaotian/llava-v1.5-13b"
         _, generator_model, _, _ = load_pretrained_model(
@@ -321,72 +308,45 @@ if __name__ == "__main__":
             model_base=None,
             model_name=get_model_name_from_path(generator_path),
         )
-    elif args.generator_model == "base_sft":
-        generator_path = "checkpoints/web/llava-v1.5-13b-2epoch-webqa-lora"
-        _, generator_model, _, _ = load_pretrained_model(
-            model_path=generator_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(generator_path),
-        )
-    elif args.generator_model == "blend_sft":
+
+    elif args.generator_model == "blend_lora":
         generator_path = model_path
         generator_model = mm_model
 
-    elif args.generator_model == "dino_sft":
-        generator_path = "checkpoints/web/llava-v1.5-13b-dino-webqa-lora"
+    elif args.generator_model == "noise_injected_lora":
+        generator_path = "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-noise-injected-lora"
         _, generator_model, _, _ = load_pretrained_model(
             model_path=generator_path,
             model_base="liuhaotian/llava-v1.5-13b",
             model_name=get_model_name_from_path(generator_path),
         )
 
-    elif args.generator_model == "long_sft":
-
-        # generator_path = (
-        #     "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-long-answer-lora"
-        # )
-        generator_path = "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-long-answer-lora-all-ground-truth"
-        _, generator_model, _, _ = load_pretrained_model(
-            model_path=generator_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(generator_path),
-        )
-
-    elif args.generator_model == "long_distortion_sft":
-        # generator_path = "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-long-answer-contrastive-distortion-lora-all-ground-truth"
-        generator_path = "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-long-answer-contrastive-distortion-lora"
-        _, generator_model, _, _ = load_pretrained_model(
-            model_path=generator_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(generator_path),
-        )
-
-    if args.datasets == "val":
-        with open("WebQA_val_image_objects.json", "r") as f:
+    if args.datasets == "test":
+        with open("datasets/WebQA_test_image.json", "r") as f:
             val_dataset = json.load(f)
 
-        with open("WebQA_val_index_to_id.json", "r") as f:
+        with open("datasets/WebQA_test_image_index_to_id.json", "r") as f:
             index_to_image_id = json.load(f)
 
-        index = faiss.read_index("WebQA_val_image_large.index")
+        index = faiss.read_index("datasets/faiss_index/WebQA_test_image.index")
 
     elif args.datasets == "dev":
-        with open("WebQA_dev_image.json", "r") as f:
+        with open("datasets/WebQA_dev_image.json", "r") as f:
             val_dataset = json.load(f)
 
-        with open("WebQA_dev_index_to_id.json", "r") as f:
+        with open("datasets/WebQA_dev_image_index_to_id.json", "r") as f:
             index_to_image_id = json.load(f)
 
-        index = faiss.read_index("WebQA_dev_image_large.index")
+        index = faiss.read_index("datasets/faiss_index/WebQA_dev_image.index")
 
     elif args.datasets == "train":
-        with open("WebQA_train_image.json", "r") as f:
+        with open("datasets/WebQA_train_image.json", "r") as f:
             val_dataset = json.load(f)
 
-        with open("WebQA_train_index_to_id.json", "r") as f:
+        with open("datasets/WebQA_train_image_index_to_id.json", "r") as f:
             index_to_image_id = json.load(f)
 
-        index = faiss.read_index("WebQA_train_image_large.index")
+        index = faiss.read_index("datasets/faiss_index/WebQA_train_image.index")
 
     with torch.no_grad():
         clip_rerank_generate(

@@ -80,10 +80,10 @@ def baseline_generate(
 
         IMAGE_PATH = ""
         for i in range(len(pos_source)):
-            if mode == "val":
-                IMAGE_PATH += "val_image/" + pos_source[i] + ".png"
+            if mode == "test":
+                IMAGE_PATH += "datasets/val_image/" + pos_source[i] + ".png"
             elif mode == "dev":
-                IMAGE_PATH += "playground/data/train_img/" + pos_source[i] + ".png"
+                IMAGE_PATH += "finetune/tasks/train_img/" + pos_source[i] + ".png"
             if i != len(pos_source) - 1:
                 IMAGE_PATH += ","
 
@@ -111,40 +111,17 @@ def baseline_generate(
     print("Multi Imgs ACC:", np.mean(acc_scores["Multi"]))
 
 
-def evaluate_example():
-    with open("answer_sets_webqa/answer_set_base_sft_85_grounding_off.json", "r") as f:
-        val_dataset = json.load(f)
-    with open("WebQA_val_image_objects.json", "r") as f:
-        vanilla_dataset = json.load(f)
-
-    acc_scores = {"ALL": [], "Single": [], "Multi": []}
-    for guid, datum in tqdm(val_dataset.items()):
-        qcate = vanilla_dataset[guid]["Qcate"]
-        prediction = datum["generator_answer"]
-        ground_truth = datum["em_answer"]
-        # ground_truth = vanilla_dataset[guid]["A"][0]
-        num_img = len(datum["gt_images"])
-        accuracy = webqa_metrics_approx(prediction, ground_truth, qcate)
-        acc_scores["ALL"].append(accuracy)
-        if num_img == 1:
-            acc_scores["Single"].append(accuracy)
-        else:
-            acc_scores["Multi"].append(accuracy)
-
-    print("Generation ACC:", np.mean(acc_scores["ALL"]))
-    print("Single Img ACC:", np.mean(acc_scores["Single"]))
-    print("Multi Imgs ACC:", np.mean(acc_scores["Multi"]))
-
-
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--datasets", type=str, default="val")
+    parser.add_argument("--datasets", type=str, default="test")
     parser.add_argument("--vcd_on", default=False, action="store_true")
     args = parser.parse_args()
+    print(args)
 
     if args.vcd_on:
         evolve_vcd_sampling()
 
+    # Baseline
     # generator_path = "liuhaotian/llava-v1.5-13b"
     # tokenizer, generator_model, image_processor, _ = load_pretrained_model(
     #     model_path=generator_path,
@@ -152,22 +129,21 @@ def main():
     #     model_name=get_model_name_from_path(generator_path),
     # )
 
-    # generator_path = (
-    #     "checkpoints/llava-v1.5-13b-2epoch-8batch_size-webqa-long-answer-test-lora"
-    # )
-    generator_path = "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-long-answer-contrastive-distortion-lora-all-ground-truth"
+    generator_path = (
+        "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-noise-injected-lora"
+    )
     tokenizer, generator_model, image_processor, _ = load_pretrained_model(
         model_path=generator_path,
         model_base="liuhaotian/llava-v1.5-13b",
         model_name=get_model_name_from_path(generator_path),
     )
 
-    if args.datasets == "val":
-        with open("WebQA_val_image_objects.json", "r") as f:
+    if args.datasets == "test":
+        with open("datasets/WebQA_test_image.json", "r") as f:
             val_dataset = json.load(f)
 
     elif args.datasets == "dev":
-        with open("WebQA_dev_image.json", "r") as f:
+        with open("datasets/WebQA_dev_image.json", "r") as f:
             val_dataset = json.load(f)
 
     with torch.no_grad():
@@ -181,20 +157,6 @@ def main():
             vcd_on=args.vcd_on,
         )
 
-    # with torch.no_grad():
-    #     answer = infer(
-    #         generator_path,
-    #         "case_study/1.JPG,case_study/3.JPG",
-    #         "Which is better maintained, the carving on the front of the Palace of the Governor in Uxmal or the Bird carving above the doorway in Mexico, Architecture?",
-    #         generator_model,
-    #         tokenizer,
-    #         image_processor,
-    #         from_array=False,
-    #         vcd_on=False,
-    #     )
-    #     print(answer)
-
 
 if __name__ == "__main__":
-    # evaluate_example()
     main()

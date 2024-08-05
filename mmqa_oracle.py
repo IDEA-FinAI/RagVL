@@ -66,7 +66,7 @@ def baseline_generate(
 ):
     acc_scores = {"ALL": []}
 
-    with open("MMQA_ImageQ_metadata.json", "r") as f:
+    with open("/datasets/MMQA_ImageQ_metadata.json", "r") as f:
         metadata = json.load(f)
 
     for datum in tqdm(val_dataset):
@@ -82,7 +82,7 @@ def baseline_generate(
 
         IMAGE_PATH = ""
         for i in range(len(pos_source)):
-            IMAGE_PATH += "playground/data/MMQA_imgs/" + metadata[pos_source[i]]["path"]
+            IMAGE_PATH += "finetune/tasks/MMQA_imgs/" + metadata[pos_source[i]]["path"]
             if i != len(pos_source) - 1:
                 IMAGE_PATH += ","
 
@@ -110,7 +110,7 @@ def baseline_generate(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--datasets", type=str, default="val")
+    parser.add_argument("--datasets", type=str, default="test")
     parser.add_argument("--vcd_on", default=False, action="store_true")
     args = parser.parse_args()
     print(args)
@@ -118,6 +118,7 @@ def main():
     if args.vcd_on:
         evolve_vcd_sampling()
 
+    # Baseline
     # generator_path = "liuhaotian/llava-v1.5-13b"
     # tokenizer, generator_model, image_processor, _ = load_pretrained_model(
     #     model_path=generator_path,
@@ -125,22 +126,19 @@ def main():
     #     model_name=get_model_name_from_path(generator_path),
     # )
 
-    # generator_path = (
-    #     "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-original-lora"
-    # )
-    generator_path = "checkpoints/llava-v1.5-13b-1epoch-8batch_size-mmqa-test-lora"
+    generator_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-noise-injected-lora"
     tokenizer, generator_model, image_processor, _ = load_pretrained_model(
         model_path=generator_path,
         model_base="liuhaotian/llava-v1.5-13b",
         model_name=get_model_name_from_path(generator_path),
     )
 
-    if args.datasets == "val":
-        with open("MMQA_test_ImageQ.json", "r") as f:
+    if args.datasets == "test":
+        with open("/datasets/MMQA_test_ImageQ.json", "r") as f:
             val_dataset = json.load(f)
 
     elif args.datasets == "dev":
-        with open("MMQA_dev_ImageQ.json", "r") as f:
+        with open("/datasets/MMQA_dev_ImageQ.json", "r") as f:
             val_dataset = json.load(f)
 
     with torch.no_grad():
