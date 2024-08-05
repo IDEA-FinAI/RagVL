@@ -1,5 +1,5 @@
 # RagLLaVA
-This is the official repo for paper: ["MLLM Is a Strong Reranker: Advancing Multimodal Retrieval-augmented Generation via Knowledge-enhanced Reranking and Noise-injected Training"](https://arxiv.org/pdf/2407.21439).
+This is the official repo for the paper: ["MLLM Is a Strong Reranker: Advancing Multimodal Retrieval-augmented Generation via Knowledge-enhanced Reranking and Noise-injected Training"](https://arxiv.org/pdf/2407.21439).
 
 ![image](https://github.com/IDEA-FinAI/RagLLaVA/blob/main/assets/framework.png)
 
@@ -24,11 +24,11 @@ Before running RagLLaVA, please:
 
 5. Place the `MMQA_imgs/` and `train_img/` into `RagLLaVA/finetune/tasks/`.
 
-6. Place the `val_image/` into `RagLLaVA/datasets/` .
+6. Place the `val_image/` into `RagLLaVA/datasets/`.
 
 
 ## Evaluation
-To eval RagLLaVA on WebQA / MultimodalQA, you can employ the following command:
+To evaluate RagLLaVA on WebQA / MultimodalQA, you can employ the following command:
 
 ```
 python webqa_pipeline.py \  # same arguments on mmqa_pipeline.py
@@ -38,14 +38,14 @@ python webqa_pipeline.py \  # same arguments on mmqa_pipeline.py
 --clip_topk 20 \ # we first retrieve 20 candidates by default
 ```
 
-To eval the oracle settings on WebQA / MultimodalQA, you can employ the following command:
+To evaluate the oracle settings on WebQA / MultimodalQA, you can employ the following command:
 
 ```
 python webqa_oracle.py \  # same arguments on mmqa_oracle.py
 ```
 
 ## Citation
-If you interested or inspired by this work, you can cite us by:
+If you are interested or inspired by this work, you can cite us by:
 ```sh
 @article{chen2024mllm,
   title={MLLM Is a Strong Reranker: Advancing Multimodal Retrieval-augmented Generation via Knowledge-enhanced Reranking and Noise-injected Training},
