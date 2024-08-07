@@ -213,7 +213,7 @@ def mmqa_metrics_approx(prediction, ground_truth, Qcate="normal"):
 
 
 def webqa_metrics_approx(prediction, ground_truth, Qcate="text"):
-    f1, recall, precision = _acc_approx(
+    f1, recall, precision, em = _acc_approx(
         prediction,
         ground_truth,
         domain={
