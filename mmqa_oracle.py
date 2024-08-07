@@ -66,7 +66,7 @@ def baseline_generate(
 ):
     acc_scores = {"ALL": []}
 
-    with open("/datasets/MMQA_ImageQ_metadata.json", "r") as f:
+    with open("datasets/MMQA_ImageQ_metadata.json", "r") as f:
         metadata = json.load(f)
 
     for datum in tqdm(val_dataset):
@@ -134,11 +134,11 @@ def main():
     )
 
     if args.datasets == "test":
-        with open("/datasets/MMQA_test_ImageQ.json", "r") as f:
+        with open("datasets/MMQA_test_ImageQ.json", "r") as f:
             val_dataset = json.load(f)
 
     elif args.datasets == "dev":
-        with open("/datasets/MMQA_dev_ImageQ.json", "r") as f:
+        with open("datasets/MMQA_dev_ImageQ.json", "r") as f:
             val_dataset = json.load(f)
 
     with torch.no_grad():
