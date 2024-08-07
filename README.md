@@ -1,7 +1,7 @@
 # RagLLaVA
 This is the official repo for paper: ["MLLM Is a Strong Reranker: Advancing Multimodal Retrieval-augmented Generation via Knowledge-enhanced Reranking and Noise-injected Training"](https://arxiv.org/pdf/2407.21439).
 
-![image](https://github.com/IDEA-FinAI/RagLLaVA/tree/main/assets/framework.png)
+![image](https://github.com/IDEA-FinAI/RagLLaVA/blob/main/assets/framework.png)
 
 ## Updates
 - [2024-08-05]: Codes of RagLLaVA released.
