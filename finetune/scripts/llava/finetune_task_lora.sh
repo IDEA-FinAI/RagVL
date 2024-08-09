@@ -1,12 +1,12 @@
 #!/bin/bash
 
-deepspeed --include localhost:4,5,6,7 llava/train/train_mem.py \
+deepspeed --include localhost:0,1,2,3 ../../../llava/train/train_mem.py \
     --lora_enable True --lora_r 128 --lora_alpha 256 --mm_projector_lr 2e-5 \
     --deepspeed ./zero3.json \
     --model_name_or_path liuhaotian/llava-v1.5-13b \
     --version v1 \
-    --data_path ../tasks/MMQA_train_ImageQ_blend_rerank_with_captions_and_mmqa_original.json \
-    --image_folder playground/data \
+    --data_path ../../tasks/WebQA_train_QA.json \
+    --image_folder ../../tasks \
     --vision_tower openai/clip-vit-large-patch14-336 \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
@@ -15,8 +15,8 @@ deepspeed --include localhost:4,5,6,7 llava/train/train_mem.py \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-13b-1epoch-8batch_size-mmqa-blend-lora-caption-original \
-    --num_train_epochs 1 \
+    --output_dir ../../../checkpoints/llava-v1.5-13b-2epoch-8batch_size-webqa-noise-injected-lora \
+    --num_train_epochs 2 \
     --per_device_train_batch_size 8 \
     --per_device_eval_batch_size 4 \
     --gradient_accumulation_steps 1 \
