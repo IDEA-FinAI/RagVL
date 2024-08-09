@@ -10,9 +10,9 @@ from utils.indexing_faiss import text_to_image
 
 import argparse
 
-from llava.model.builder import load_pretrained_model
 from llava.mm_utils import get_model_name_from_path
-from llava.eval.run_llava import llava_chat, eval_relevance
+from llava.eval.run_llava import llava_chat, llava_eval_relevance
+from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat, owl_eval_relevance
 
 
 def cal_relevance(
@@ -37,7 +37,12 @@ def cal_relevance(
         },
     )()
 
-    prob = eval_relevance(args, tokenizer, model, image_processor)
+    if "llava" in reranker_model_path:
+        prob = llava_eval_relevance(args, tokenizer, model, image_processor)
+    elif "mplug-owl2" in reranker_model_path:
+        prob = owl_eval_relevance(args, tokenizer, model, image_processor)
+    # elif "qwenvl" in reranker_model_path:
+    #     output = qwen_eval_relevance(args, tokenizer, model, image_processor)
 
     return prob
 
@@ -68,7 +73,19 @@ def infer(
         },
     )()
 
-    output = llava_chat(args, tokenizer, model, image_processor, from_array=from_array)
+    if "llava" in model_path:
+        output = llava_chat(
+            args,
+            tokenizer,
+            model,
+            image_processor,
+            from_array=from_array,
+        )
+    elif "mplug-owl2" in model_path:
+        output = owl_chat(args, tokenizer, model, image_processor)
+
+    # elif "qwenvl" in model_path:
+    #     output = qwen_chat(args, tokenizer, model, image_processor)
 
     return output
 
@@ -251,23 +268,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    save_path = "mmqa_" + (
-        "_".join(
-            [
-                attr
-                for attr in [
-                    "answer_set",
-                    args.reranker_model,
-                    args.generator_model,
-                    str(args.filter)[2:],
-                    "clip_top" + str(args.clip_topk) if args.clip_topk != 20 else "",
-                ]
-                if attr != ""
-            ]
-        )
-        + ".json"
-    )
-
     clip_model, preprocess = clip.load("ViT-L/14@336px", device="cuda", jit=False)
 
     ################### reranker_model ###################
@@ -280,11 +280,23 @@ if __name__ == "__main__":
     elif args.reranker_model == "blend_caption_lora":
         reranker_model_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-blend-caption-lora"
 
-    tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-        model_path=reranker_model_path,
-        model_base="liuhaotian/llava-v1.5-13b",
-        model_name=get_model_name_from_path(reranker_model_path),
-    )
+    if "llava" in reranker_model_path:
+        from llava.model.builder import load_pretrained_model
+
+        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
+            model_path=reranker_model_path,
+            model_base="liuhaotian/llava-v1.5-13b",
+            model_name=get_model_name_from_path(reranker_model_path),
+        )
+
+    elif "mplug-owl2" in reranker_model_path:
+        from mplug_owl2.model.builder import load_pretrained_model
+
+        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
+            model_path=reranker_model_path,
+            model_base="MAGAer13/mplug-owl2-llama2-7b",
+            model_name=get_model_name_from_path(reranker_model_path),
+        )
 
     ################### generator_model ###################
     if args.generator_model == "base":
@@ -323,6 +335,31 @@ if __name__ == "__main__":
             index_to_image_id = json.load(f)
 
         index = faiss.read_index("datasets/faiss_index/MMQA_dev_ImageQ.index")
+
+    save_path = (
+        reranker_model_path.split("/")[1]
+        + "_mmqa_"
+        + (
+            "_".join(
+                [
+                    attr
+                    for attr in [
+                        "answer_set",
+                        args.reranker_model,
+                        args.generator_model,
+                        str(args.filter)[2:],
+                        (
+                            "clip_top" + str(args.clip_topk)
+                            if args.clip_topk != 20
+                            else ""
+                        ),
+                    ]
+                    if attr != ""
+                ]
+            )
+            + ".json"
+        )
+    )
 
     with torch.no_grad():
         clip_rerank_generate(

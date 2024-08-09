@@ -86,6 +86,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         cd_alpha: Optional[torch.FloatTensor] = None,
         image_sizes: Optional[List[List[int]]] = None,
         return_dict: Optional[bool] = None,
+        forward_func: Optional[str] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
         ################### vcd ###################
@@ -153,99 +154,101 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         #     return_dict=return_dict,
         # )
 
-        ################### vanilla forward ###################
-        if inputs_embeds is None:
-            (
-                input_ids,
-                position_ids,
-                attention_mask,
-                past_key_values,
-                inputs_embeds,
-                labels,
-            ) = self.prepare_inputs_labels_for_multimodal(
-                input_ids,
-                position_ids,
-                attention_mask,
-                past_key_values,
-                labels,
-                images,
-                image_sizes,
+        if forward_func == "vanilla":
+            ################### vanilla forward ###################
+            if inputs_embeds is None:
+                (
+                    input_ids,
+                    position_ids,
+                    attention_mask,
+                    past_key_values,
+                    inputs_embeds,
+                    labels,
+                ) = self.prepare_inputs_labels_for_multimodal(
+                    input_ids,
+                    position_ids,
+                    attention_mask,
+                    past_key_values,
+                    labels,
+                    images,
+                    image_sizes,
+                )
+
+            return super().forward(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
             )
 
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            labels=labels,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
+        else:
+            ################## distortion-image cd-weighted ###################
+            if inputs_embeds is None:
+                images_tensor_cd = [
+                    add_diffusion_noise(img_tensor, 500) for img_tensor in images
+                ]
+                if all(x.shape == images_tensor_cd[0].shape for x in images_tensor_cd):
+                    images_tensor_cd = torch.stack(images_tensor_cd, dim=0).to(
+                        images[0].device, dtype=images[0].dtype
+                    )
 
-        ################### distortion-image cd-weighted ###################
-        # if inputs_embeds is None:
-        #     images_tensor_cd = [
-        #         add_diffusion_noise(img_tensor, 500) for img_tensor in images
-        #     ]
-        #     if all(x.shape == images_tensor_cd[0].shape for x in images_tensor_cd):
-        #         images_tensor_cd = torch.stack(images_tensor_cd, dim=0).to(
-        #             images[0].device, dtype=images[0].dtype
-        #         )
+                (
+                    (
+                        input_ids,
+                        position_ids,
+                        attention_mask,
+                        past_key_values,
+                        inputs_embeds,
+                        labels,
+                    ),
+                    (
+                        _,
+                        _,
+                        _,
+                        _,
+                        cd_inputs_embeds,
+                        _,
+                    ),
+                ) = (
+                    self.prepare_inputs_labels_for_multimodal(
+                        input_ids,
+                        position_ids,
+                        attention_mask,
+                        past_key_values,
+                        labels,
+                        images,
+                        image_sizes,
+                    ),
+                    self.prepare_inputs_labels_for_multimodal(
+                        input_ids,
+                        position_ids,
+                        attention_mask,
+                        past_key_values,
+                        labels,
+                        images_tensor_cd,
+                        image_sizes,
+                    ),
+                )
 
-        #     (
-        #         (
-        #             input_ids,
-        #             position_ids,
-        #             attention_mask,
-        #             past_key_values,
-        #             inputs_embeds,
-        #             labels,
-        #         ),
-        #         (
-        #             _,
-        #             _,
-        #             _,
-        #             _,
-        #             cd_inputs_embeds,
-        #             _,
-        #         ),
-        #     ) = (
-        #         self.prepare_inputs_labels_for_multimodal(
-        #             input_ids,
-        #             position_ids,
-        #             attention_mask,
-        #             past_key_values,
-        #             labels,
-        #             images,
-        #             image_sizes,
-        #         ),
-        #         self.prepare_inputs_labels_for_multimodal(
-        #             input_ids,
-        #             position_ids,
-        #             attention_mask,
-        #             past_key_values,
-        #             labels,
-        #             images_tensor_cd,
-        #             image_sizes,
-        #         ),
-        #     )
-
-        # return self.cd_forward(
-        #     input_ids=input_ids,
-        #     attention_mask=attention_mask,
-        #     position_ids=position_ids,
-        #     past_key_values=past_key_values,
-        #     inputs_embeds=inputs_embeds,
-        #     labels=labels,
-        #     cd_inputs_embeds=cd_inputs_embeds,
-        #     use_cache=use_cache,
-        #     output_attentions=output_attentions,
-        #     output_hidden_states=output_hidden_states,
-        #     return_dict=return_dict,
-        # )
+            return self.cd_forward(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                cd_inputs_embeds=cd_inputs_embeds,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
 
     def cd_forward(
         self,
@@ -397,7 +400,6 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         image_sizes: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
-        # ipdb.set_trace()
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)
         images_cd = kwargs.get("images_cd", None)
@@ -455,6 +457,9 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
             inputs["images"] = images
         if image_sizes is not None:
             inputs["image_sizes"] = image_sizes
+
+        inputs["forward_func"] = kwargs.pop("forward_func", None)
+
         return inputs
 
     def prepare_inputs_for_generation_cd(

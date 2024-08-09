@@ -234,6 +234,7 @@ def llava_chat(args, tokenizer, model, image_processor, from_array=False, vcd_on
             use_cache=True,
             cd_alpha=1,
             cd_beta=0.1,
+            forward_func="vanilla",
         )
 
     outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
@@ -241,7 +242,7 @@ def llava_chat(args, tokenizer, model, image_processor, from_array=False, vcd_on
     return outputs
 
 
-def eval_relevance(args, tokenizer, model, image_processor):
+def llava_eval_relevance(args, tokenizer, model, image_processor):
     disable_torch_init()
 
     model_name = get_model_name_from_path(args.model_path)
@@ -322,6 +323,7 @@ def eval_relevance(args, tokenizer, model, image_processor):
             use_cache=True,
             return_dict_in_generate=True,
             output_scores=True,
+            forward_func="vanilla",
         )
 
     logits = generation_output.scores[0][0]

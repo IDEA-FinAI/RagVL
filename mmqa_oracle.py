@@ -7,10 +7,10 @@ import numpy as np
 
 import argparse
 
-from llava.model.builder import load_pretrained_model
 from llava.mm_utils import get_model_name_from_path
 from llava.eval.run_llava import llava_chat
-from vcd_utils.vcd_sample import evolve_vcd_sampling
+from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat
+
 from utils.metrics import mmqa_metrics_approx
 
 
@@ -48,9 +48,20 @@ def infer(
         },
     )()
 
-    output = llava_chat(
-        args, tokenizer, model, image_processor, from_array=from_array, vcd_on=vcd_on
-    )
+    if "llava" in model_path:
+        output = llava_chat(
+            args,
+            tokenizer,
+            model,
+            image_processor,
+            from_array=from_array,
+            vcd_on=vcd_on,
+        )
+    elif "mplug-owl2" in model_path:
+        output = owl_chat(args, tokenizer, model, image_processor)
+
+    # elif "qwenvl" in model_path:
+    #     output = qwen_chat(args, tokenizer, model, image_processor)
 
     return output
 
@@ -115,23 +126,47 @@ def main():
     args = parser.parse_args()
     print(args)
 
-    if args.vcd_on:
-        evolve_vcd_sampling()
+    # if args.vcd_on:
+    #     from vcd_utils.vcd_sample import evolve_vcd_sampling
+    #     evolve_vcd_sampling()
 
-    # Baseline
     # generator_path = "liuhaotian/llava-v1.5-13b"
-    # tokenizer, generator_model, image_processor, _ = load_pretrained_model(
-    #     model_path=generator_path,
-    #     model_base=None,
-    #     model_name=get_model_name_from_path(generator_path),
+    generator_path = "MAGAer13/mplug-owl2-llama2-7b"
+    # generator_path = (
+    #     "checkpoints/llava-v1.5-13b-1epoch-8batch_size-mmqa-noise-injected-lora"
     # )
 
-    generator_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-noise-injected-lora"
-    tokenizer, generator_model, image_processor, _ = load_pretrained_model(
-        model_path=generator_path,
-        model_base="liuhaotian/llava-v1.5-13b",
-        model_name=get_model_name_from_path(generator_path),
-    )
+    if "llava" in generator_path:
+        from llava.model.builder import load_pretrained_model
+
+        if "lora" in generator_path:
+            tokenizer, generator_model, image_processor, _ = load_pretrained_model(
+                model_path=generator_path,
+                model_base="liuhaotian/llava-v1.5-13b",
+                model_name=get_model_name_from_path(generator_path),
+            )
+        else:
+            tokenizer, generator_model, image_processor, _ = load_pretrained_model(
+                model_path=generator_path,
+                model_base=None,
+                model_name=get_model_name_from_path(generator_path),
+            )
+
+    elif "mplug-owl2" in generator_path:
+        from mplug_owl2.model.builder import load_pretrained_model
+
+        if "lora" in generator_path:
+            tokenizer, generator_model, image_processor, _ = load_pretrained_model(
+                model_path=generator_path,
+                model_base="MAGAer13/mplug-owl2-llama2-7b",
+                model_name=get_model_name_from_path(generator_path),
+            )
+        else:
+            tokenizer, generator_model, image_processor, _ = load_pretrained_model(
+                model_path=generator_path,
+                model_base=None,
+                model_name=get_model_name_from_path(generator_path),
+            )
 
     if args.datasets == "test":
         with open("datasets/MMQA_test_ImageQ.json", "r") as f:

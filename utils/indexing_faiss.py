@@ -10,10 +10,6 @@ import argparse
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# clip_model, preprocess = clip.load("ViT-B/32", device=device, jit=False)
-clip_model, preprocess = clip.load("ViT-L/14@336px", device=device, jit=False)
-# clip_model, preprocess = clip.load("ViT-L/14", device=device, jit=False)
-
 
 # ------------- build_index -------------
 def build_faiss(val_dataset, device, model):
@@ -29,8 +25,8 @@ def build_faiss(val_dataset, device, model):
             image_id = pos_imgs[j]["image_id"]
             if image_id in index_to_image_id.values():
                 continue
-            image_path = "train_img/" + str(image_id) + ".png"
-            # image_path = "val_image/" + str(image_id) + ".png"
+            # image_path = "../finetune/tasks/train_img/" + str(image_id) + ".png"
+            image_path = "../datasets/val_image/" + str(image_id) + ".png"
 
             image = preprocess(Image.open(image_path)).to(device)
             with torch.no_grad():
@@ -86,8 +82,10 @@ def clip_retrieval(val_dataset, ind, index_to_image_id, topk=4):
             pos_source.append(item["image_id"])
         D, I = text_to_image(question, clip_model, ind, topk)
         for d, j in zip(D[0], I[0]):
-            # img_id = index_to_image_id[str(j)]
-            img_id = index_to_image_id[j]
+            ## 从json文件中load index_to_image_id的话要用这一行
+            img_id = index_to_image_id[str(j)]
+
+            # img_id = index_to_image_id[j]
             retrieved_imgs.append(img_id)
 
         intersect = set(pos_source).intersection(set(retrieved_imgs))
@@ -113,16 +111,19 @@ if __name__ == "__main__":
     parser.add_argument("--topk", type=int, default=20)
     args = parser.parse_args()
 
-    with open("WebQA_train_image.json", "r") as f:
+    with open("../datasets/WebQA_test_image.json", "r") as f:
         val_dataset = json.load(f)
 
-    index, index_to_image_id = build_faiss(
-        val_dataset, device, clip_model, args.require_caption
-    )
+    clip_name = "ViT-L/14@336px"
+    clip_model, preprocess = clip.load(clip_name, device=device, jit=False)
 
-    faiss.write_index(index, "WebQA_train_image_large.index")
-    with open("WebQA_train_index_to_id.json", "w") as json_file:
-        json.dump(index_to_image_id, json_file, indent=4)
+    index, _ = build_faiss(val_dataset, device, clip_model)
+    name = "-".join(clip_name.split("/"))
+    faiss.write_index(index, "WebQA_test_image_" + name + ".index")
+
+    # index = faiss.read_index("../datasets/faiss_index/WebQA_test_image.index")
+    with open("../datasets/WebQA_test_image_index_to_id.json", "r") as f:
+        index_to_image_id = json.load(f)
 
     with torch.no_grad():
         hard_examples = clip_retrieval(val_dataset, index, index_to_image_id, args.topk)
