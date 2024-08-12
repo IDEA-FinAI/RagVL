@@ -14,34 +14,38 @@ from llava.mm_utils import get_model_name_from_path
 from llava.eval.run_llava import llava_chat, llava_eval_relevance
 from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat, owl_eval_relevance
 from mplug_owl2.model.modeling_llama2 import replace_llama_modality_adaptive
+from qwenvl.run_qwenvl import qwen_chat, qwen_eval_relevance
+from peft import AutoPeftModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
 def cal_relevance(model_path, image_path, question, model, tokenizer, image_processor):
 
-    args = type(
-        "Args",
-        (),
-        {
-            "model_path": model_path,
-            "model_base": None,
-            "model_name": get_model_name_from_path(model_path),
-            "query": question,
-            "conv_mode": None,
-            "image_file": image_path,
-            "sep": ",",
-            "temperature": 0,
-            "top_p": None,
-            "num_beams": 1,
-            "max_new_tokens": 512,
-        },
-    )()
+    if "qwen-vl" in model_path.lower():
+        prob = qwen_eval_relevance(image_path, question, model, tokenizer)
+    else:
+        args = type(
+            "Args",
+            (),
+            {
+                "model_path": model_path,
+                "model_base": None,
+                "model_name": get_model_name_from_path(model_path),
+                "query": question,
+                "conv_mode": None,
+                "image_file": image_path,
+                "sep": ",",
+                "temperature": 0,
+                "top_p": None,
+                "num_beams": 1,
+                "max_new_tokens": 512,
+            },
+        )()
 
-    if "llava" in model_path:
-        prob = llava_eval_relevance(args, tokenizer, model, image_processor)
-    elif "mplug-owl2" in model_path:
-        prob = owl_eval_relevance(args, tokenizer, model, image_processor)
-    # elif "qwenvl" in model_path:
-    #     output = qwen_eval_relevance(args, tokenizer, model, image_processor)
+        if "llava" in model_path:
+            prob = llava_eval_relevance(args, tokenizer, model, image_processor)
+        elif "mplug-owl2" in model_path:
+            prob = owl_eval_relevance(args, tokenizer, model, image_processor)
 
     return prob
 
@@ -60,37 +64,37 @@ def infer(
     else:
         prompt_template = f"""Question: {question}\nAnswer the question with less than eight words based on the provided images."""
 
-    args = type(
-        "Args",
-        (),
-        {
-            "model_path": model_path,
-            "model_base": None,
-            "model_name": get_model_name_from_path(model_path),
-            "query": prompt_template,
-            "conv_mode": None,
-            "image_file": image_file,
-            "sep": ",",
-            "temperature": 0,
-            "top_p": None,
-            "num_beams": 1,
-            "max_new_tokens": 512,
-        },
-    )()
+    if "qwen-vl" in model_path.lower():
+        output = qwen_chat(image_file, prompt_template, model, tokenizer)
+    else:
+        args = type(
+            "Args",
+            (),
+            {
+                "model_path": model_path,
+                "model_base": None,
+                "model_name": get_model_name_from_path(model_path),
+                "query": prompt_template,
+                "conv_mode": None,
+                "image_file": image_file,
+                "sep": ",",
+                "temperature": 0,
+                "top_p": None,
+                "num_beams": 1,
+                "max_new_tokens": 512,
+            },
+        )()
 
-    if "llava" in model_path:
-        output = llava_chat(
-            args,
-            tokenizer,
-            model,
-            image_processor,
-            from_array=from_array,
-        )
-    elif "mplug-owl2" in model_path:
-        output = owl_chat(args, tokenizer, model, image_processor)
-
-    # elif "qwenvl" in model_path:
-    #     output = qwen_chat(args, tokenizer, model, image_processor)
+        if "llava" in model_path:
+            output = llava_chat(
+                args,
+                tokenizer,
+                model,
+                image_processor,
+                from_array=from_array,
+            )
+        elif "mplug-owl2" in model_path:
+            output = owl_chat(args, tokenizer, model, image_processor)
 
     return output
 
@@ -343,13 +347,17 @@ if __name__ == "__main__":
     ################### reranker_model ###################
 
     if args.reranker_model == "base":
-        reranker_model_path = "liuhaotian/llava-v1.5-13b"
+        # reranker_model_path = "liuhaotian/llava-v1.5-13b"
         # reranker_model_path = "MAGAer13/mplug-owl2-llama2-7b"
+        reranker_model_path = "Qwen/Qwen-VL-Chat"
 
     elif args.reranker_model == "caption_lora":
         # reranker_model_path = "checkpoints/web/llava-v1.5-13b-2epoch-16batch_size-webqa-reranker-caption-lora"
+        # reranker_model_path = (
+        #     "checkpoints/mplug-owl2-2epoch-16batch_size-webqa-reranker-caption-lora"
+        # )
         reranker_model_path = (
-            "checkpoints/mplug-owl2-2epoch-16batch_size-webqa-reranker-caption-lora"
+            "checkpoints/qwen-vl-chat-2epoch-4batch_size-webqa-reranker-caption-lora"
         )
 
     elif args.reranker_model == "blend_caption_lora":
@@ -388,6 +396,24 @@ if __name__ == "__main__":
                 model_base=None,
                 model_name=get_model_name_from_path(reranker_model_path),
             )
+
+    elif "qwen-vl" in reranker_model_path.lower():
+        tokenizer = AutoTokenizer.from_pretrained(
+            "Qwen/Qwen-VL-Chat", trust_remote_code=True
+        )
+
+        if "lora" in reranker_model_path:
+            reranker_model = AutoPeftModelForCausalLM.from_pretrained(
+                reranker_model_path,  # path to the output directory
+                device_map="auto",
+                trust_remote_code=True,
+            ).eval()
+        else:
+            reranker_model = AutoModelForCausalLM.from_pretrained(
+                "Qwen/Qwen-VL-Chat", device_map="cuda", trust_remote_code=True
+            ).eval()
+
+        image_processor = None
 
     ################### generator_model ###################
     if args.generator_model == "base":
