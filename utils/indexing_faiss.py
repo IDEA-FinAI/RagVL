@@ -48,7 +48,6 @@ def build_faiss(val_dataset, device, model, model_type="clip", preprocess=None):
                         pixel_values, mode=model_type
                     ).to(torch.float)
 
-            ipdb.set_trace()
             combined_embedding = image_embeddings
             normalized_embedding = combined_embedding / combined_embedding.norm(
                 dim=-1, keepdim=True
@@ -171,6 +170,8 @@ def text_to_image(text, model, ind, topk=4, model_type="clip", tokenizer=None):
     elif model_type == "bge":
         text_features = model.encode(text=text)
     else:
+        prefix = "summarize:"
+        text = prefix + text
         input_ids = tokenizer(
             text,
             return_tensors="pt",
@@ -354,23 +355,23 @@ if __name__ == "__main__":
     if args.datasets == "WebQA":
         with open("../datasets/WebQA_test_image.json", "r") as f:
             val_dataset = json.load(f)
-        index, index_to_image_id = build_faiss(
-            val_dataset,
-            device,
-            model,
-            model_type=args.model_type,
-            preprocess=preprocess,
-        )
+        # index, index_to_image_id = build_faiss(
+        #     val_dataset,
+        #     device,
+        #     model,
+        #     model_type=args.model_type,
+        #     preprocess=preprocess,
+        # )
 
     elif args.datasets == "flickr30k":
         val_dataset = pd.read_csv("../datasets/flickr30k_test_karpathy.txt")
-        index, index_to_image_id = build_faiss_flickr30k(
-            val_dataset,
-            device,
-            model,
-            model_type=args.model_type,
-            preprocess=preprocess,
-        )
+        # index, index_to_image_id = build_faiss_flickr30k(
+        #     val_dataset,
+        #     device,
+        #     model,
+        #     model_type=args.model_type,
+        #     preprocess=preprocess,
+        # )
 
     elif args.datasets == "coco":
         ids = []
@@ -392,20 +393,20 @@ if __name__ == "__main__":
         #     original_data, val_dataset, device, model, model_type=args.model_type,preprocess=preprocess
         # )
 
-    faiss.write_index(
-        index,
-        "../datasets/faiss_index/"
-        + args.datasets
-        + "_test_image_"
-        + args.model_type
-        + ".index",
-    )
+    # faiss.write_index(
+    #     index,
+    #     "../datasets/faiss_index/"
+    #     + args.datasets
+    #     + "_test_image_"
+    #     + args.model_type
+    #     + ".index",
+    # )
     # with open("../datasets/coco_test_image_index_to_id.json", "w") as f:
     #     json.dump(index_to_image_id, f, indent=4)
 
-    # index = faiss.read_index(
-    #     "../datasets/faiss_index/" + args.datasets + "_test_image_InternVL-C.index"
-    # )
+    index = faiss.read_index(
+        "../datasets/faiss_index/" + args.datasets + "_test_image_InternVL-C.index"
+    )
     with open(
         "../datasets/" + args.datasets + "_test_image_index_to_id.json", "r"
     ) as f:
