@@ -2,7 +2,7 @@
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 DIR=`pwd`
 
-GPUS_PER_NODE=8
+GPUS_PER_NODE=7
 NNODES=1
 NODE_RANK=0
 MASTER_ADDR=localhost
@@ -11,7 +11,7 @@ MASTER_PORT=6001
 MODEL="Qwen/Qwen-VL-Chat" #"Qwen/Qwen-VL-Chat"/"Qwen/Qwen-VL"  Set the path if you do not want to load from huggingface directly
 # ATTENTION: specify the path to your training data, which should be a json file consisting of a list of conversations.
 # See the section for finetuning in README for more information.
-DATA="../../tasks/WebQA_train_rerank_qwenvl.json"
+DATA="../../tasks/WebQA_train_QA_qwenvl.json"
 
 DISTRIBUTED_ARGS="
     --nproc_per_node $GPUS_PER_NODE \
@@ -21,16 +21,18 @@ DISTRIBUTED_ARGS="
     --master_port $MASTER_PORT
 "
 
+export CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7
+
 torchrun $DISTRIBUTED_ARGS finetune.py \
     --model_name_or_path $MODEL \
     --data_path $DATA \
     --bf16 True \
     --fix_vit True \
-    --output_dir ../../../checkpoints/qwen-vl-chat-2epoch-4batch_size-webqa-reranker-caption-lora \
+    --output_dir ../../../checkpoints/qwen-vl-chat-2epoch-2batch_size-webqa-noise-injected-lora-new \
     --num_train_epochs 2 \
-    --per_device_train_batch_size 4 \
+    --per_device_train_batch_size 2 \
     --per_device_eval_batch_size 1 \
-    --gradient_accumulation_steps 4 \
+    --gradient_accumulation_steps 8 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
     --save_steps 1000 \

@@ -5,15 +5,19 @@ import clip
 import torch
 import json
 from tqdm import tqdm
-
 import argparse
+import pandas as pd
+
+from FlagEmbedding.visual.modeling import Visualized_BGE
+import ipdb
+from transformers import AutoModel, CLIPImageProcessor
+from transformers import AutoTokenizer
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 # ------------- build_index -------------
-def build_faiss(val_dataset, device, model):
-
+def build_faiss(val_dataset, device, model, model_type="clip", preprocess=None):
     embeddings = []
     index_to_image_id = {}
     count = 0
@@ -28,9 +32,23 @@ def build_faiss(val_dataset, device, model):
             # image_path = "../finetune/tasks/train_img/" + str(image_id) + ".png"
             image_path = "../datasets/val_image/" + str(image_id) + ".png"
 
-            image = preprocess(Image.open(image_path)).to(device)
             with torch.no_grad():
-                image_embeddings = model.encode_image(torch.unsqueeze(image, dim=0))
+                if model_type == "clip":
+                    image = preprocess(Image.open(image_path)).to(device)
+                    image_embeddings = model.encode_image(torch.unsqueeze(image, dim=0))
+                elif model_type == "bge":
+                    image_embeddings = model.encode(image=image_path)
+                else:
+                    pixel_values = preprocess(
+                        images=Image.open(image_path).convert("RGB"),
+                        return_tensors="pt",
+                    ).pixel_values
+                    pixel_values = pixel_values.to(torch.bfloat16).to(device)
+                    image_embeddings = model.encode_image(
+                        pixel_values, mode=model_type
+                    ).to(torch.float)
+
+            ipdb.set_trace()
             combined_embedding = image_embeddings
             normalized_embedding = combined_embedding / combined_embedding.norm(
                 dim=-1, keepdim=True
@@ -53,11 +71,116 @@ def build_faiss(val_dataset, device, model):
     return index, index_to_image_id
 
 
-# ------------- text-to-image -------------
-def text_to_image(text, model, ind, topk=4):
-    text_tokens = clip.tokenize([text], truncate=True)
+def build_faiss_flickr30k(
+    val_dataset, device, model, model_type="clip", preprocess=None
+):
+    embeddings = []
+    index_to_image_id = {}
+    count = 0
+    images = val_dataset["image"]
+    for img in tqdm(images[::5]):
+        image_path = "../finetune/tasks/flickr30k/Images/" + img
+        with torch.no_grad():
+            if model_type == "clip":
+                image = preprocess(Image.open(image_path)).to(device)
+                image_embeddings = model.encode_image(torch.unsqueeze(image, dim=0))
+            elif model_type == "bge":
+                image_embeddings = model.encode(image=image_path)
+            else:
+                pixel_values = preprocess(
+                    images=Image.open(image_path).convert("RGB"),
+                    return_tensors="pt",
+                ).pixel_values
+                pixel_values = pixel_values.to(torch.bfloat16).to(device)
+                image_embeddings = model.encode_image(pixel_values, mode=model_type).to(
+                    torch.float
+                )
 
-    text_features = model.encode_text(text_tokens.to(device))
+        combined_embedding = image_embeddings
+        normalized_embedding = combined_embedding / combined_embedding.norm(
+            dim=-1, keepdim=True
+        )
+        embeddings.append(normalized_embedding.cpu().numpy())
+
+        index_to_image_id[count] = img[:-4]
+        count += 1
+
+    embeddings = np.vstack(embeddings).astype("float32")
+
+    # cosine similarity
+    index = faiss.IndexFlatIP(embeddings.shape[1])
+
+    index.add(embeddings)
+
+    return index, index_to_image_id
+
+
+def build_faiss_coco(
+    original_data, val_dataset, device, model, model_type="clip", preprocess=None
+):
+    embeddings = []
+    index_to_image_id = {}
+    count = 0
+    image_ids = val_dataset["ids"]
+    image_files = {}
+    for img in original_data["images"]:
+        image_files[str(img["id"])] = img["file_name"]
+
+    for img in tqdm(image_ids[::5]):
+        image_path = "../finetune/tasks/MSCOCO/val2014/" + image_files[img]
+        with torch.no_grad():
+            if model_type == "clip":
+                image = preprocess(Image.open(image_path)).to(device)
+                image_embeddings = model.encode_image(torch.unsqueeze(image, dim=0))
+            elif model_type == "bge":
+                image_embeddings = model.encode(image=image_path)
+            else:
+                pixel_values = preprocess(
+                    images=Image.open(image_path).convert("RGB"),
+                    return_tensors="pt",
+                ).pixel_values
+                pixel_values = pixel_values.to(torch.bfloat16).to(device)
+                image_embeddings = model.encode_image(pixel_values, mode=model_type).to(
+                    torch.float
+                )
+
+        combined_embedding = image_embeddings
+        normalized_embedding = combined_embedding / combined_embedding.norm(
+            dim=-1, keepdim=True
+        )
+        embeddings.append(normalized_embedding.cpu().numpy())
+
+        index_to_image_id[count] = img
+        count += 1
+
+    embeddings = np.vstack(embeddings).astype("float32")
+
+    # cosine similarity
+    index = faiss.IndexFlatIP(embeddings.shape[1])
+
+    index.add(embeddings)
+
+    return index, index_to_image_id
+
+
+# ------------- text-to-image -------------
+def text_to_image(text, model, ind, topk=4, model_type="clip", tokenizer=None):
+    if model_type == "clip":
+        text_tokens = clip.tokenize([text], truncate=True)
+        text_features = model.encode_text(text_tokens.to(device))
+    elif model_type == "bge":
+        text_features = model.encode(text=text)
+    else:
+        input_ids = tokenizer(
+            text,
+            return_tensors="pt",
+            max_length=80,
+            truncation=True,
+            padding="max_length",
+        ).input_ids.to(device)
+
+        text_features = model.encode_text(input_ids).to(torch.float)
+
     text_features /= text_features.norm(dim=-1, keepdim=True)
     text_embeddings = text_features.cpu().detach().numpy().astype("float32")
 
@@ -65,7 +188,7 @@ def text_to_image(text, model, ind, topk=4):
     return D, I
 
 
-def clip_retrieval(val_dataset, ind, index_to_image_id, topk=4):
+def clip_retrieval(val_dataset, ind, index_to_image_id, model, args, tokenizer=None):
     total_correct = 0
     total_sc_num = 0
     total_re_num = 0
@@ -80,7 +203,14 @@ def clip_retrieval(val_dataset, ind, index_to_image_id, topk=4):
             continue
         for item in pos_imgs:
             pos_source.append(item["image_id"])
-        D, I = text_to_image(question, clip_model, ind, topk)
+        D, I = text_to_image(
+            question,
+            model,
+            ind,
+            args.topk,
+            model_type=args.model_type,
+            tokenizer=tokenizer,
+        )
         for d, j in zip(D[0], I[0]):
             ## 从json文件中load index_to_image_id的话要用这一行
             img_id = index_to_image_id[str(j)]
@@ -106,27 +236,191 @@ def clip_retrieval(val_dataset, ind, index_to_image_id, topk=4):
     return hard_examples
 
 
+def clip_retrieval_flickr30k(
+    val_dataset, ind, index_to_image_id, model, args, tokenizer=None
+):
+    total_correct = 0
+    total_sc_num = 0
+    total_re_num = 0
+
+    captions = val_dataset["caption"]
+    images = val_dataset["image"]
+    for i in tqdm(range(len(captions))):
+        cap = captions[i]
+        pos_source = [images[i][:-4]]
+        retrieved_imgs = []
+
+        D, I = text_to_image(
+            cap, model, ind, args.topk, model_type=args.model_type, tokenizer=tokenizer
+        )
+        for d, j in zip(D[0], I[0]):
+            ## 从json文件中load index_to_image_id的话要用这一行
+            img_id = index_to_image_id[str(j)]
+            # img_id = index_to_image_id[j]
+
+            retrieved_imgs.append(img_id)
+
+        intersect = set(pos_source).intersection(set(retrieved_imgs))
+        total_sc_num += len(retrieved_imgs)
+        total_re_num += len(pos_source)
+        total_correct += len(list(intersect))
+
+    pre = total_correct / total_sc_num
+    recall = total_correct / total_re_num
+    f1 = 2 * pre * recall / (pre + recall)
+    print("Re pre:", pre)
+    print("Re recall:", recall)
+    print("Re F1:", f1)
+
+
+def clip_retrieval_coco(
+    val_dataset, ind, index_to_image_id, model, args, tokenizer=None
+):
+    total_correct = 0
+    total_sc_num = 0
+    total_re_num = 0
+
+    captions = val_dataset["captions"]
+    image_ids = val_dataset["ids"]
+    for i in tqdm(range(len(captions))):
+        cap = captions[i]
+        pos_source = [image_ids[i]]
+        retrieved_imgs = []
+
+        D, I = text_to_image(
+            cap, model, ind, args.topk, model_type=args.model_type, tokenizer=tokenizer
+        )
+        for d, j in zip(D[0], I[0]):
+            ## 从json文件中load index_to_image_id的话要用这一行
+            img_id = index_to_image_id[str(j)]
+            # img_id = index_to_image_id[j]
+
+            retrieved_imgs.append(img_id)
+
+        intersect = set(pos_source).intersection(set(retrieved_imgs))
+        total_sc_num += len(retrieved_imgs)
+        total_re_num += len(pos_source)
+        total_correct += len(list(intersect))
+
+    pre = total_correct / total_sc_num
+    recall = total_correct / total_re_num
+    f1 = 2 * pre * recall / (pre + recall)
+    print("Re pre:", pre)
+    print("Re recall:", recall)
+    print("Re F1:", f1)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--topk", type=int, default=20)
+    parser.add_argument("--datasets", type=str, default="WebQA")
+    parser.add_argument("--model_type", type=str, default="clip")
     args = parser.parse_args()
 
-    with open("../datasets/WebQA_test_image.json", "r") as f:
-        val_dataset = json.load(f)
+    if args.model_type == "clip":
+        model, preprocess = clip.load("ViT-L/14@336px", device=device, jit=False)
+        tokenizer = None
+    elif args.model_type == "bge":
+        # model = Visualized_BGE(
+        #     model_name_bge="BAAI/bge-base-en-v1.5",
+        #     model_weight="FlagEmbedding/bge_models/Visualized_base_en_v1.5.pth",
+        # )
+        model = Visualized_BGE(
+            model_name_bge="BAAI/bge-m3",
+            model_weight="FlagEmbedding/bge_models/Visualized_m3.pth",
+        )
 
-    clip_name = "ViT-L/14@336px"
-    clip_model, preprocess = clip.load(clip_name, device=device, jit=False)
+        preprocess = None
+        tokenizer = None
+        model.eval()
+    elif "internvl" in args.model_type.lower():
+        model = (
+            AutoModel.from_pretrained(
+                "OpenGVLab/InternVL-14B-224px",
+                torch_dtype=torch.bfloat16,
+                low_cpu_mem_usage=True,
+                trust_remote_code=True,
+            )
+            .to(device)
+            .eval()
+        )
 
-    index, _ = build_faiss(val_dataset, device, clip_model)
-    name = "-".join(clip_name.split("/"))
-    faiss.write_index(index, "WebQA_test_image_" + name + ".index")
+        preprocess = CLIPImageProcessor.from_pretrained("OpenGVLab/InternVL-14B-224px")
+        tokenizer = AutoTokenizer.from_pretrained(
+            "OpenGVLab/InternVL-14B-224px", use_fast=False, add_eos_token=True
+        )
+        tokenizer.pad_token_id = 0  # set pad_token_id to 0
 
-    # index = faiss.read_index("../datasets/faiss_index/WebQA_test_image.index")
-    with open("../datasets/WebQA_test_image_index_to_id.json", "r") as f:
+    if args.datasets == "WebQA":
+        with open("../datasets/WebQA_test_image.json", "r") as f:
+            val_dataset = json.load(f)
+        index, index_to_image_id = build_faiss(
+            val_dataset,
+            device,
+            model,
+            model_type=args.model_type,
+            preprocess=preprocess,
+        )
+
+    elif args.datasets == "flickr30k":
+        val_dataset = pd.read_csv("../datasets/flickr30k_test_karpathy.txt")
+        index, index_to_image_id = build_faiss_flickr30k(
+            val_dataset,
+            device,
+            model,
+            model_type=args.model_type,
+            preprocess=preprocess,
+        )
+
+    elif args.datasets == "coco":
+        ids = []
+        captions = []
+        with open("../datasets/coco_test_ids.txt", "r") as f:
+            for line in f:
+                ids.append(line.strip())
+
+        with open("../datasets/coco_test_caps.txt", "r") as f:
+            for line in f:
+                captions.append(line.strip())
+
+        val_dataset = {"ids": ids, "captions": captions}
+
+        with open("../datasets/coco_test_karpathy.json", "r") as f:
+            original_data = json.load(f)
+
+        # index, index_to_image_id = build_faiss_coco(
+        #     original_data, val_dataset, device, model, model_type=args.model_type,preprocess=preprocess
+        # )
+
+    faiss.write_index(
+        index,
+        "../datasets/faiss_index/"
+        + args.datasets
+        + "_test_image_"
+        + args.model_type
+        + ".index",
+    )
+    # with open("../datasets/coco_test_image_index_to_id.json", "w") as f:
+    #     json.dump(index_to_image_id, f, indent=4)
+
+    # index = faiss.read_index(
+    #     "../datasets/faiss_index/" + args.datasets + "_test_image_InternVL-C.index"
+    # )
+    with open(
+        "../datasets/" + args.datasets + "_test_image_index_to_id.json", "r"
+    ) as f:
         index_to_image_id = json.load(f)
 
     with torch.no_grad():
-        hard_examples = clip_retrieval(val_dataset, index, index_to_image_id, args.topk)
-
-    # with open("hard_examples_" + str(args.topk) + ".json", "w") as f:
-    #     json.dump(hard_examples, f, indent=4)
+        if args.datasets == "WebQA":
+            hard_examples = clip_retrieval(
+                val_dataset, index, index_to_image_id, model, args, tokenizer
+            )
+        elif args.datasets == "flickr30k":
+            clip_retrieval_flickr30k(
+                val_dataset, index, index_to_image_id, model, args, tokenizer
+            )
+        elif args.datasets == "coco":
+            clip_retrieval_coco(
+                val_dataset, index, index_to_image_id, model, args, tokenizer
+            )
