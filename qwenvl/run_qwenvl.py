@@ -24,12 +24,15 @@ def qwen_eval_relevance(image_path, question, model, tokenizer):
 
 def qwen_chat(image_path, question, model, tokenizer):
 
-    query_list = [{"image": image_path}]
+    query_list = []
+    if image_path:
+        for img in image_path.split(","):
+            query_list.append({"image": img})
 
     query_list.append({"text": question})
 
     query = tokenizer.from_list_format(query_list)
-    response, _ = model.chat(tokenizer, query=query, history=None)
+    response, _ = model.chat(tokenizer, query=query, history=None, do_sample=False)
 
     return response
 

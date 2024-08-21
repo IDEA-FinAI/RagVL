@@ -86,7 +86,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         cd_alpha: Optional[torch.FloatTensor] = None,
         image_sizes: Optional[List[List[int]]] = None,
         return_dict: Optional[bool] = None,
-        forward_func: Optional[str] = None,
+        forward_func: Optional[str] = "vanilla",
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
         ################### vcd ###################

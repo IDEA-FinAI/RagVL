@@ -13,7 +13,6 @@ import argparse
 from llava.mm_utils import get_model_name_from_path
 from llava.eval.run_llava import llava_chat, llava_eval_relevance
 from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat, owl_eval_relevance
-from mplug_owl2.model.modeling_llama2 import replace_llama_modality_adaptive
 from qwenvl.run_qwenvl import qwen_chat, qwen_eval_relevance
 from peft import AutoPeftModelForCausalLM
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -147,7 +146,7 @@ def clip_rerank_generate(
         for guid in tqdm(val_dataset):
             datum = val_dataset[guid]
             question = datum["Q"]
-            em_answer = datum["EM"]
+            em_answer = datum["EM"] if "EM" in datum else datum["A"][0]
             pos_imgs = datum["img_posFacts"]
             qcate = datum["Qcate"]
 
@@ -297,8 +296,8 @@ def clip_rerank_generate(
 
         f.write("}")
 
-    # with open("webqa_distribution_prob_" + mode + ".json", "w") as json_file:
-    #     json.dump(probabilities, json_file, indent=4)
+    with open("webqa_distribution_prob_" + mode + ".json", "w") as json_file:
+        json.dump(probabilities, json_file, indent=4)
 
     pre = retrieval_correct / retrieval_num
     recall = retrieval_correct / retrieval_pos_num
@@ -324,9 +323,9 @@ def clip_rerank_generate(
     print("Retrieval recall_10:", recall_10)
     print("Retrieval F1_10:", f1_10)
 
-    print("Generation ACC:", np.mean(acc_scores["ALL"]))
     print("Single Img ACC:", np.mean(acc_scores["Single"]))
     print("Multi Imgs ACC:", np.mean(acc_scores["Multi"]))
+    print("Generation ACC:", np.mean(acc_scores["ALL"]))
 
     print("Hard examples count:", len(hard_examples))
     return hard_examples
@@ -340,6 +339,7 @@ if __name__ == "__main__":
     parser.add_argument("--filter", type=float, default=0)
     parser.add_argument("--rerank_off", default=False, action="store_true")
     parser.add_argument("--clip_topk", type=int, default=20)
+    parser.add_argument("--noise_ratio", type=float, default=0)
 
     args = parser.parse_args()
     print(args)
@@ -347,18 +347,16 @@ if __name__ == "__main__":
     ################### reranker_model ###################
 
     if args.reranker_model == "base":
-        # reranker_model_path = "liuhaotian/llava-v1.5-13b"
+        reranker_model_path = "liuhaotian/llava-v1.5-13b"
         # reranker_model_path = "MAGAer13/mplug-owl2-llama2-7b"
-        reranker_model_path = "Qwen/Qwen-VL-Chat"
+        # reranker_model_path = "Qwen/Qwen-VL-Chat"
 
     elif args.reranker_model == "caption_lora":
-        # reranker_model_path = "checkpoints/web/llava-v1.5-13b-2epoch-16batch_size-webqa-reranker-caption-lora"
+        reranker_model_path = "checkpoints/web/llava-v1.5-13b-2epoch-16batch_size-webqa-reranker-caption-lora"
         # reranker_model_path = (
         #     "checkpoints/mplug-owl2-2epoch-16batch_size-webqa-reranker-caption-lora"
         # )
-        reranker_model_path = (
-            "checkpoints/qwen-vl-chat-2epoch-4batch_size-webqa-reranker-caption-lora"
-        )
+        # reranker_model_path = "checkpoints/qwen-vl-chat-2epoch-4batch_size-webqa-reranker-caption-lora-new"
 
     elif args.reranker_model == "blend_caption_lora":
         reranker_model_path = (
@@ -373,6 +371,7 @@ if __name__ == "__main__":
                 model_path=reranker_model_path,
                 model_base="liuhaotian/llava-v1.5-13b",
                 model_name=get_model_name_from_path(reranker_model_path),
+                # use_flash_attn=True,
             )
         else:
             tokenizer, reranker_model, image_processor, _ = load_pretrained_model(
@@ -405,7 +404,7 @@ if __name__ == "__main__":
         if "lora" in reranker_model_path:
             reranker_model = AutoPeftModelForCausalLM.from_pretrained(
                 reranker_model_path,  # path to the output directory
-                device_map="auto",
+                device_map=6,
                 trust_remote_code=True,
             ).eval()
         else:
@@ -435,6 +434,14 @@ if __name__ == "__main__":
             model_base="liuhaotian/llava-v1.5-13b",
             model_name=get_model_name_from_path(generator_path),
         )
+        # generator_path = (
+        #     "checkpoints/qwen-vl-chat-2epoch-2batch_size-webqa-noise-injected-lora-new"
+        # )
+        # generator_model = AutoPeftModelForCausalLM.from_pretrained(
+        #     generator_path,  # path to the output directory
+        #     device_map=7,
+        #     trust_remote_code=True,
+        # ).eval()
 
     elif args.generator_model == "None":
         generator_path = None
@@ -442,15 +449,21 @@ if __name__ == "__main__":
 
     # ['RN50', 'RN101', 'RN50x4', 'RN50x16', 'RN50x64', 'ViT-B/32', 'ViT-B/16', 'ViT-L/14', 'ViT-L/14@336px']
     clip_model, preprocess = clip.load("ViT-L/14@336px", device="cuda", jit=False)
-    # clip_model, preprocess = clip.load("ViT-L/14", device="cuda", jit=False) down
-    # clip_model, preprocess = clip.load("ViT-B/16", device="cuda", jit=False)
 
     if args.datasets == "test":
         with open("datasets/WebQA_test_image.json", "r") as f:
             val_dataset = json.load(f)
 
-        with open("datasets/WebQA_test_image_index_to_id.json", "r") as f:
-            index_to_image_id = json.load(f)
+        if args.noise_ratio == 0:
+            with open("datasets/WebQA_test_image_index_to_id.json", "r") as f:
+                index_to_image_id = json.load(f)
+        else:
+            with open(
+                "datasets/WebQA_test_image_index_to_id_noise"
+                + f"{int(args.noise_ratio * 100)}.json",
+                "r",
+            ) as f:
+                index_to_image_id = json.load(f)
 
         index = faiss.read_index("datasets/faiss_index/WebQA_test_image.index")
 
@@ -481,6 +494,11 @@ if __name__ == "__main__":
                     attr
                     for attr in [
                         "answer_set",
+                        (
+                            f"noise{int(args.noise_ratio * 100)}"
+                            if args.noise_ratio != 0
+                            else ""
+                        ),
                         args.reranker_model,
                         args.generator_model,
                         str(args.filter)[2:],

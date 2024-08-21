@@ -19,16 +19,6 @@
             "weight_decay": "auto"
         }
     },
-
-    "scheduler": {
-        "type": "WarmupLR",
-        "params": {
-            "warmup_min_lr": "auto",
-            "warmup_max_lr": "auto",
-            "warmup_num_steps": "auto"
-        }
-    },
-
     "zero_optimization": {
         "stage": 2,
         "offload_optimizer": {
@@ -42,7 +32,6 @@
         "reduce_bucket_size": 2e8,
         "contiguous_gradients": true
     },
-
     "gradient_accumulation_steps": "auto",
     "gradient_clipping": "auto",
     "steps_per_print": 100,

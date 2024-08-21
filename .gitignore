@@ -21,3 +21,7 @@ ckpts*
 
 .ipynb_checkpoints
 *.ipynb
+
+visualize.py
+attention_visualization
+*.pth

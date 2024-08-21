@@ -57,6 +57,11 @@ If you are interested or inspired by this work, you can cite us by:
 
 ## Related Projects
 - [LLaVA](https://github.com/haotian-liu/LLaVA): Large Language and Vision Assistant
+- [Qwen-VL](https://github.com/QwenLM/Qwen-VL): A Versatile Vision-Language Model for Understanding, Localization, Text Reading, and Beyond
+- [mPLUG-Owl](https://github.com/X-PLUG/mPLUG-Owl): The Powerful Multi-modal Large Language Model Family
+- [InternVL](https://github.com/OpenGVLab/InternVL): A Pioneering Open-Source Alternative to GPT-4o
+- [Visualized BGE](https://github.com/FlagOpen/FlagEmbedding/tree/master/FlagEmbedding/visual): A universal multi-modal embedding model
 - [VCD](https://github.com/DAMO-NLP-SG/VCD): Mitigating Object Hallucinations in Large Vision-Language Models through Visual Contrastive Decoding
 - [CAL](https://github.com/foundation-multimodal-models/CAL): Prioritizing Visual Correlation by Contrastive Alignment
-- [Qwen-VL](https://github.com/QwenLM/Qwen-VL): A Versatile Vision-Language Model for Understanding, Localization, Text Reading, and Beyond
+
+

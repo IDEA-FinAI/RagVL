@@ -2,8 +2,8 @@
 
 LOAD='MAGAer13/mplug-owl2-llama2-7b'
 
-DATA_FILE=../../tasks/WebQA_train_rerank_owl.json
-deepspeed ../../../mplug_owl2/train/train_mem.py \
+DATA_FILE=../../tasks/WebQA_train_QA_owl.json
+deepspeed --include localhost:4,5,6,7 ../../../mplug_owl2/train/train_mem.py \
     --lora_enable True --lora_r 128 --lora_alpha 256 --visual_abstractor_lr 2e-5 \
     --deepspeed ./zero3.json \
     --model_name_or_path $LOAD \
@@ -13,9 +13,9 @@ deepspeed ../../../mplug_owl2/train/train_mem.py \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ../../../checkpoints/mplug-owl2-2epoch-16batch_size-webqa-reranker-caption-lora \
+    --output_dir ../../../checkpoints/mplug-owl2-2epoch-8batch_size-webqa-noise-injected-lora \
     --num_train_epochs 2 \
-    --per_device_train_batch_size 16 \
+    --per_device_train_batch_size 8 \
     --per_device_eval_batch_size 4 \
     --gradient_accumulation_steps 1 \
     --evaluation_strategy "no" \

@@ -40,6 +40,7 @@ from .modeling_qwen import QWenLMHeadModel, QWenModel
 from mplug_owl2.constants import IMAGE_TOKEN_INDEX, IGNORE_INDEX
 from icecream import ic
 from transformers.modeling_utils import PreTrainedModel
+from vcd_utils.vcd_add_noise import add_diffusion_noise
 
 
 class MPLUGOwl2MetaModel:
@@ -348,7 +349,9 @@ class MPLUGOwl2LlamaForCausalLM(LlamaForCausalLM, MPLUGOwl2MetaForCausalLM):
         self.model = MPLUGOwl2LlamaModel(config)
 
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-
+        self.avg_layer = torch.nn.AvgPool1d(
+            3, stride=1, padding=1, count_include_pad=False
+        )
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -390,18 +393,81 @@ class MPLUGOwl2LlamaForCausalLM(LlamaForCausalLM, MPLUGOwl2MetaForCausalLM):
         return_dict = (
             return_dict if return_dict is not None else self.config.use_return_dict
         )
+
+        images_tensor_cd = [
+            add_diffusion_noise(img_tensor, 500) for img_tensor in images
+        ]
+        if all(x.shape == images_tensor_cd[0].shape for x in images_tensor_cd):
+            images_tensor_cd = torch.stack(images_tensor_cd, dim=0).to(
+                images[0].device, dtype=images[0].dtype
+            )
+
         (
-            input_ids,
-            modality_indicators,
-            attention_mask,
-            past_key_values,
-            inputs_embeds,
-            labels,
-        ) = self.prepare_inputs_labels_for_multimodal(
-            input_ids, attention_mask, past_key_values, labels, images
+            (
+                input_ids,
+                modality_indicators,
+                attention_mask,
+                past_key_values,
+                inputs_embeds,
+                labels,
+            ),
+            (
+                _,
+                _,
+                _,
+                _,
+                cd_inputs_embeds,
+                _,
+            ),
+        ) = (
+            self.prepare_inputs_labels_for_multimodal(
+                input_ids,
+                attention_mask,
+                past_key_values,
+                labels,
+                images,
+            ),
+            self.prepare_inputs_labels_for_multimodal(
+                input_ids,
+                attention_mask,
+                past_key_values,
+                labels,
+                images_tensor_cd,
+            ),
         )
 
+        # (
+        #     input_ids,
+        #     modality_indicators,
+        #     attention_mask,
+        #     past_key_values,
+        #     inputs_embeds,
+        #     labels,
+        # ) = self.prepare_inputs_labels_for_multimodal(
+        #     input_ids, attention_mask, past_key_values, labels, images
+        # )
+
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+
+        # if labels is not None:
+        #     with torch.no_grad():
+        #         cd_outputs = self.model(
+        #             input_ids=input_ids,
+        #             modality_indicators=modality_indicators,
+        #             attention_mask=attention_mask,
+        #             past_key_values=past_key_values,
+        #             inputs_embeds=cd_inputs_embeds,
+        #             use_cache=use_cache,
+        #             output_attentions=output_attentions,
+        #             output_hidden_states=output_hidden_states,
+        #             return_dict=return_dict,
+        #         )
+
+        #         cd_hidden_states = cd_outputs[0]
+        #         cd_logits = self.lm_head(cd_hidden_states)
+
+        #         del cd_hidden_states, cd_outputs
+
         outputs = self.model(
             input_ids=input_ids,
             modality_indicators=modality_indicators,
@@ -416,9 +482,11 @@ class MPLUGOwl2LlamaForCausalLM(LlamaForCausalLM, MPLUGOwl2MetaForCausalLM):
 
         hidden_states = outputs[0]
         logits = self.lm_head(hidden_states)
+        del hidden_states
 
         loss = None
         if labels is not None:
+            # Vanilla NLL loss
             # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
@@ -429,6 +497,34 @@ class MPLUGOwl2LlamaForCausalLM(LlamaForCausalLM, MPLUGOwl2MetaForCausalLM):
             # Enable model/pipeline parallelism
             shift_labels = shift_labels.to(shift_logits.device)
             loss = loss_fct(shift_logits, shift_labels)
+
+            # ## Noise-injected Training
+            # # Shift so that tokens < n predict n
+            # shift_logits = logits[..., :-1, :].contiguous()
+            # shift_labels = labels[..., 1:].contiguous()
+            # # Flatten the tokens
+            # loss_fct = CrossEntropyLoss(reduction="none")
+            # shift_logits = shift_logits.view(-1, self.config.vocab_size)
+            # shift_labels = shift_labels.view(-1)
+            # # Enable model parallelism
+            # shift_labels = shift_labels.to(shift_logits.device)
+
+            # with torch.no_grad():
+            #     shift_logits_clone = shift_logits.clone()
+            #     shift_cd_logits = cd_logits[..., :-1, :].contiguous()
+            #     shift_cd_logits = shift_cd_logits.view(-1, self.config.vocab_size)
+            #     del cd_logits
+
+            #     sub = shift_logits_clone - shift_cd_logits
+
+            #     sub = torch.clamp(sub, min=1, max=5)
+            #     sub = self.avg_layer(sub[:, 0].unsqueeze(dim=0).unsqueeze(dim=0))
+            #     sub = sub[0, 0]
+
+            #     del shift_cd_logits, shift_logits_clone
+
+            # loss = loss_fct(shift_logits, shift_labels) * sub
+            # loss = loss.sum() / (sub[shift_labels != IGNORE_INDEX].sum() + 1e-6)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
