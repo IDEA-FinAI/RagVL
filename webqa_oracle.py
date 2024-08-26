@@ -11,9 +11,11 @@ from llava.mm_utils import get_model_name_from_path
 from llava.eval.run_llava import llava_chat
 from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat
 from qwenvl.run_qwenvl import qwen_chat
+from internvl_chat.eval.run_internvl import internvl_chat, internvl_eval_relevance
 
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
 from peft import AutoPeftModelForCausalLM
+from internvl_chat.internvl.model.internvl_chat import InternVLChatModel
 
 
 ############### Inference ###############
@@ -25,7 +27,6 @@ def infer(
     tokenizer,
     image_processor,
     from_array=False,
-    vcd_on=False,
 ):
     if "webqa" in model_path:
         prompt_template = question
@@ -63,6 +64,8 @@ def infer(
             )
         elif "mplug-owl2" in model_path:
             output = owl_chat(args, tokenizer, model, image_processor)
+        elif "internvl" in model_path.lower():
+            output = internvl_chat(args, tokenizer, model)
 
     return output
 
@@ -119,7 +122,6 @@ def baseline_generate(
     image_processor,
     generator_model,
     mode,
-    vcd_on=False,
     noise_ratio=0,
 ):
     acc_scores = {"ALL": [], "Single": [], "Multi": []}
@@ -164,7 +166,6 @@ def baseline_generate(
             tokenizer,
             image_processor,
             from_array=False,
-            vcd_on=vcd_on,
         )
 
         accuracy = webqa_metrics_approx(output, em_answer, qcate)
@@ -183,24 +184,24 @@ def baseline_generate(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--datasets", type=str, default="test")
-    parser.add_argument("--vcd_on", default=False, action="store_true")
     parser.add_argument("--noise_ratio", type=float, default=0)
     args = parser.parse_args()
     print(args)
 
-    # if args.vcd_on:
-    #     from vcd_utils.vcd_sample import evolve_vcd_sampling
-    #     evolve_vcd_sampling()
-
+    generator_path = "OpenGVLab/InternVL2-2B"
     # generator_path = "liuhaotian/llava-v1.5-13b"
+    # generator_path = "MAGAer13/mplug-owl2-llama2-7b"
+    # generator_path = "Qwen/Qwen-VL-Chat"
+
     # generator_path = (
     #     "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-vanilla-lora"
     # )
-
-    # generator_path = "MAGAer13/mplug-owl2-llama2-7b"
-
-    # generator_path = "Qwen/Qwen-VL-Chat"
-    generator_path = "checkpoints/qwen-vl-chat-2epoch-2batch_size-webqa-vanilla-lora"
+    # generator_path = (
+    #     "checkpoints/web/mplug-owl2-2epoch-8batch_size-webqa-noise-injected-lora"
+    # )
+    # generator_path = (
+    #     "checkpoints/internvl2_2b_1epoch-8batch_size-webqa-noise-injected-lora"
+    # )
 
     if "llava" in generator_path:
         from llava.model.builder import load_pretrained_model
@@ -252,6 +253,49 @@ def main():
 
         image_processor = None
 
+    elif "internvl" in generator_path.lower():
+        tokenizer = AutoTokenizer.from_pretrained(
+            generator_path, trust_remote_code=True, use_fast=False
+        )
+
+        if "lora" in generator_path:
+            print("Loading model...")
+            generator_model = (
+                InternVLChatModel.from_pretrained(
+                    generator_path,
+                    low_cpu_mem_usage=True,
+                    torch_dtype=torch.bfloat16,
+                    trust_remote_code=True,
+                )
+                .eval()
+                .cuda()
+            )
+
+            if generator_model.config.use_backbone_lora:
+                generator_model.vision_model.merge_and_unload()
+                generator_model.vision_model = generator_model.vision_model.model
+                generator_model.config.use_backbone_lora = 0
+            if generator_model.config.use_llm_lora:
+                generator_model.language_model.merge_and_unload()
+                generator_model.language_model = generator_model.language_model.model
+                generator_model.config.use_llm_lora = 0
+
+            print("Done!")
+        else:
+            generator_model = (
+                AutoModel.from_pretrained(
+                    generator_path,
+                    torch_dtype=torch.bfloat16,
+                    low_cpu_mem_usage=True,
+                    use_flash_attn=True,
+                    trust_remote_code=True,
+                )
+                .eval()
+                .cuda()
+            )
+
+        image_processor = None
+
     if args.datasets == "test":
         with open("datasets/WebQA_test_image.json", "r") as f:
             val_dataset = json.load(f)
@@ -268,7 +312,6 @@ def main():
             image_processor,
             generator_model,
             mode=args.datasets,
-            vcd_on=args.vcd_on,
             noise_ratio=args.noise_ratio,
         )
 

@@ -1,6 +1,7 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.generation import GenerationConfig
 from peft import AutoPeftModelForCausalLM
+import torch
 
 
 def qwen_eval_relevance(image_path, question, model, tokenizer):
@@ -10,7 +11,7 @@ def qwen_eval_relevance(image_path, question, model, tokenizer):
     query_list.append({"text": question})
 
     query = tokenizer.from_list_format(query_list)
-    output_prob = model.chat(
+    outputs = model.chat(
         tokenizer,
         query=query,
         history=None,
@@ -19,7 +20,24 @@ def qwen_eval_relevance(image_path, question, model, tokenizer):
         do_sample=False,
     )
 
-    return output_prob
+    logits = outputs.scores[0][0]
+
+    probs = (
+        torch.nn.functional.softmax(
+            torch.FloatTensor(
+                [
+                    logits[tokenizer("Yes").input_ids[0]],
+                    logits[tokenizer("No").input_ids[0]],
+                ]
+            ),
+            dim=0,
+        )
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    return probs[0]
 
 
 def qwen_chat(image_path, question, model, tokenizer):

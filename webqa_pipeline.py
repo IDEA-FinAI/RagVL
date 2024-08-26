@@ -14,8 +14,10 @@ from llava.mm_utils import get_model_name_from_path
 from llava.eval.run_llava import llava_chat, llava_eval_relevance
 from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat, owl_eval_relevance
 from qwenvl.run_qwenvl import qwen_chat, qwen_eval_relevance
+from internvl_chat.eval.run_internvl import internvl_chat, internvl_eval_relevance
 from peft import AutoPeftModelForCausalLM
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
+from internvl_chat.internvl.model.internvl_chat import InternVLChatModel
 
 
 def cal_relevance(model_path, image_path, question, model, tokenizer, image_processor):
@@ -45,6 +47,8 @@ def cal_relevance(model_path, image_path, question, model, tokenizer, image_proc
             prob = llava_eval_relevance(args, tokenizer, model, image_processor)
         elif "mplug-owl2" in model_path:
             prob = owl_eval_relevance(args, tokenizer, model, image_processor)
+        elif "internvl" in model_path.lower():
+            prob = internvl_eval_relevance(args, tokenizer, model)
 
     return prob
 
@@ -94,6 +98,8 @@ def infer(
             )
         elif "mplug-owl2" in model_path:
             output = owl_chat(args, tokenizer, model, image_processor)
+        elif "internvl" in model_path.lower():
+            output = internvl_chat(args, tokenizer, model)
 
     return output
 
@@ -347,16 +353,21 @@ if __name__ == "__main__":
     ################### reranker_model ###################
 
     if args.reranker_model == "base":
-        reranker_model_path = "liuhaotian/llava-v1.5-13b"
+        # reranker_model_path = "liuhaotian/llava-v1.5-13b"
         # reranker_model_path = "MAGAer13/mplug-owl2-llama2-7b"
         # reranker_model_path = "Qwen/Qwen-VL-Chat"
+        reranker_model_path = "OpenGVLab/InternVL2-2B"
 
     elif args.reranker_model == "caption_lora":
-        reranker_model_path = "checkpoints/web/llava-v1.5-13b-2epoch-16batch_size-webqa-reranker-caption-lora"
+        # reranker_model_path = "checkpoints/web/llava-v1.5-13b-2epoch-16batch_size-webqa-reranker-caption-lora"
         # reranker_model_path = (
-        #     "checkpoints/mplug-owl2-2epoch-16batch_size-webqa-reranker-caption-lora"
+        #     "checkpoints/mplug-owl2-2epoch-8batch_size-webqa-reranker-caption-lora"
         # )
-        # reranker_model_path = "checkpoints/qwen-vl-chat-2epoch-4batch_size-webqa-reranker-caption-lora-new"
+        # reranker_model_path = "checkpoints/web/qwen-vl-chat-2epoch-4batch_size-webqa-reranker-caption-lora-new"
+
+        reranker_model_path = (
+            "checkpoints/internvl2_2b_1epoch-16batch_size-webqa-reranker-caption-lora"
+        )
 
     elif args.reranker_model == "blend_caption_lora":
         reranker_model_path = (
@@ -409,18 +420,88 @@ if __name__ == "__main__":
             ).eval()
         else:
             reranker_model = AutoModelForCausalLM.from_pretrained(
-                "Qwen/Qwen-VL-Chat", device_map="cuda", trust_remote_code=True
+                "Qwen/Qwen-VL-Chat", device_map=2, trust_remote_code=True
             ).eval()
+
+        image_processor = None
+
+    elif "internvl" in reranker_model_path.lower():
+        tokenizer = AutoTokenizer.from_pretrained(
+            reranker_model_path, trust_remote_code=True, use_fast=False
+        )
+
+        if "lora" in reranker_model_path:
+            print("Loading model...")
+            reranker_model = (
+                InternVLChatModel.from_pretrained(
+                    reranker_model_path,
+                    low_cpu_mem_usage=True,
+                    torch_dtype=torch.bfloat16,
+                    trust_remote_code=True,
+                )
+                .eval()
+                .cuda()
+            )
+
+            if reranker_model.config.use_backbone_lora:
+                reranker_model.vision_model.merge_and_unload()
+                reranker_model.vision_model = reranker_model.vision_model.model
+                reranker_model.config.use_backbone_lora = 0
+            if reranker_model.config.use_llm_lora:
+                reranker_model.language_model.merge_and_unload()
+                reranker_model.language_model = reranker_model.language_model.model
+                reranker_model.config.use_llm_lora = 0
+
+            print("Done!")
+        else:
+            reranker_model = (
+                AutoModel.from_pretrained(
+                    reranker_model_path,
+                    torch_dtype=torch.bfloat16,
+                    low_cpu_mem_usage=True,
+                    use_flash_attn=True,
+                    trust_remote_code=True,
+                )
+                .eval()
+                .cuda()
+            )
 
         image_processor = None
 
     ################### generator_model ###################
     if args.generator_model == "base":
-        generator_path = "liuhaotian/llava-v1.5-13b"
-        _, generator_model, _, _ = load_pretrained_model(
-            model_path=generator_path,
-            model_base=None,
-            model_name=get_model_name_from_path(generator_path),
+        # generator_path = "liuhaotian/llava-v1.5-13b"
+        # _, generator_model, _, _ = load_pretrained_model(
+        #     model_path=generator_path,
+        #     model_base=None,
+        #     model_name=get_model_name_from_path(generator_path),
+        # )
+
+        # generator_path = "Qwen/Qwen-VL-Chat"
+        # generator_model = AutoModelForCausalLM.from_pretrained(
+        #     generator_path,  # path to the output directory
+        #     device_map=7,
+        #     trust_remote_code=True,
+        # ).eval()
+
+        # generator_path = "MAGAer13/mplug-owl2-llama2-7b"
+        # _, generator_model, _, _ = load_pretrained_model(
+        #     model_path=generator_path,
+        #     model_base=None,
+        #     model_name=get_model_name_from_path(generator_path),
+        # )
+
+        generator_path = "OpenGVLab/InternVL2-2B"
+        generator_model = (
+            AutoModel.from_pretrained(
+                generator_path,
+                torch_dtype=torch.bfloat16,
+                low_cpu_mem_usage=True,
+                use_flash_attn=True,
+                trust_remote_code=True,
+            )
+            .eval()
+            .cuda()
         )
 
     elif args.generator_model == "blend_lora":
@@ -428,12 +509,13 @@ if __name__ == "__main__":
         generator_model = reranker_model
 
     elif args.generator_model == "noise_injected_lora":
-        generator_path = "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-noise-injected-lora"
-        _, generator_model, _, _ = load_pretrained_model(
-            model_path=generator_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(generator_path),
-        )
+        # generator_path = "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-noise-injected-lora"
+        # _, generator_model, _, _ = load_pretrained_model(
+        #     model_path=generator_path,
+        #     model_base="liuhaotian/llava-v1.5-13b",
+        #     model_name=get_model_name_from_path(generator_path),
+        # )
+
         # generator_path = (
         #     "checkpoints/qwen-vl-chat-2epoch-2batch_size-webqa-noise-injected-lora-new"
         # )
@@ -442,6 +524,41 @@ if __name__ == "__main__":
         #     device_map=7,
         #     trust_remote_code=True,
         # ).eval()
+
+        # generator_path = (
+        #     "checkpoints/web/mplug-owl2-2epoch-8batch_size-webqa-noise-injected-lora"
+        # )
+        # _, generator_model, _, _ = load_pretrained_model(
+        #     model_path=generator_path,
+        #     model_base="MAGAer13/mplug-owl2-llama2-7b",
+        #     model_name=get_model_name_from_path(generator_path),
+        # )
+
+        generator_path = (
+            "checkpoints/internvl2_2b_1epoch-8batch_size-webqa-noise-injected-lora"
+        )
+        print("Loading model...")
+        generator_model = (
+            InternVLChatModel.from_pretrained(
+                generator_path,
+                low_cpu_mem_usage=True,
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True,
+            )
+            .eval()
+            .cuda()
+        )
+
+        if generator_model.config.use_backbone_lora:
+            generator_model.vision_model.merge_and_unload()
+            generator_model.vision_model = generator_model.vision_model.model
+            generator_model.config.use_backbone_lora = 0
+        if generator_model.config.use_llm_lora:
+            generator_model.language_model.merge_and_unload()
+            generator_model.language_model = generator_model.language_model.model
+            generator_model.config.use_llm_lora = 0
+
+        print("Done!")
 
     elif args.generator_model == "None":
         generator_path = None
