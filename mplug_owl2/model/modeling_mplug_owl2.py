@@ -394,79 +394,60 @@ class MPLUGOwl2LlamaForCausalLM(LlamaForCausalLM, MPLUGOwl2MetaForCausalLM):
             return_dict if return_dict is not None else self.config.use_return_dict
         )
 
-        images_tensor_cd = [
-            add_diffusion_noise(img_tensor, 500) for img_tensor in images
-        ]
-        if all(x.shape == images_tensor_cd[0].shape for x in images_tensor_cd):
-            images_tensor_cd = torch.stack(images_tensor_cd, dim=0).to(
-                images[0].device, dtype=images[0].dtype
-            )
-
-        (
-            (
-                input_ids,
-                modality_indicators,
-                attention_mask,
-                past_key_values,
-                inputs_embeds,
-                labels,
-            ),
-            (
-                _,
-                _,
-                _,
-                _,
-                cd_inputs_embeds,
-                _,
-            ),
-        ) = (
-            self.prepare_inputs_labels_for_multimodal(
-                input_ids,
-                attention_mask,
-                past_key_values,
-                labels,
-                images,
-            ),
-            self.prepare_inputs_labels_for_multimodal(
-                input_ids,
-                attention_mask,
-                past_key_values,
-                labels,
-                images_tensor_cd,
-            ),
-        )
+        # images_tensor_cd = [
+        #     add_diffusion_noise(img_tensor, 500) for img_tensor in images
+        # ]
+        # if all(x.shape == images_tensor_cd[0].shape for x in images_tensor_cd):
+        #     images_tensor_cd = torch.stack(images_tensor_cd, dim=0).to(
+        #         images[0].device, dtype=images[0].dtype
+        #     )
 
         # (
-        #     input_ids,
-        #     modality_indicators,
-        #     attention_mask,
-        #     past_key_values,
-        #     inputs_embeds,
-        #     labels,
-        # ) = self.prepare_inputs_labels_for_multimodal(
-        #     input_ids, attention_mask, past_key_values, labels, images
+        #     (
+        #         input_ids,
+        #         modality_indicators,
+        #         attention_mask,
+        #         past_key_values,
+        #         inputs_embeds,
+        #         labels,
+        #     ),
+        #     (
+        #         _,
+        #         _,
+        #         _,
+        #         _,
+        #         cd_inputs_embeds,
+        #         _,
+        #     ),
+        # ) = (
+        #     self.prepare_inputs_labels_for_multimodal(
+        #         input_ids,
+        #         attention_mask,
+        #         past_key_values,
+        #         labels,
+        #         images,
+        #     ),
+        #     self.prepare_inputs_labels_for_multimodal(
+        #         input_ids,
+        #         attention_mask,
+        #         past_key_values,
+        #         labels,
+        #         images_tensor_cd,
+        #     ),
         # )
 
-        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        (
+            input_ids,
+            modality_indicators,
+            attention_mask,
+            past_key_values,
+            inputs_embeds,
+            labels,
+        ) = self.prepare_inputs_labels_for_multimodal(
+            input_ids, attention_mask, past_key_values, labels, images
+        )
 
-        # if labels is not None:
-        #     with torch.no_grad():
-        #         cd_outputs = self.model(
-        #             input_ids=input_ids,
-        #             modality_indicators=modality_indicators,
-        #             attention_mask=attention_mask,
-        #             past_key_values=past_key_values,
-        #             inputs_embeds=cd_inputs_embeds,
-        #             use_cache=use_cache,
-        #             output_attentions=output_attentions,
-        #             output_hidden_states=output_hidden_states,
-        #             return_dict=return_dict,
-        #         )
-
-        #         cd_hidden_states = cd_outputs[0]
-        #         cd_logits = self.lm_head(cd_hidden_states)
-
-        #         del cd_hidden_states, cd_outputs
+        ## decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
 
         outputs = self.model(
             input_ids=input_ids,
@@ -510,6 +491,23 @@ class MPLUGOwl2LlamaForCausalLM(LlamaForCausalLM, MPLUGOwl2MetaForCausalLM):
             # shift_labels = shift_labels.to(shift_logits.device)
 
             # with torch.no_grad():
+            #     cd_outputs = self.model(
+            #         input_ids=input_ids,
+            #         modality_indicators=modality_indicators,
+            #         attention_mask=attention_mask,
+            #         past_key_values=past_key_values,
+            #         inputs_embeds=cd_inputs_embeds,
+            #         use_cache=use_cache,
+            #         output_attentions=output_attentions,
+            #         output_hidden_states=output_hidden_states,
+            #         return_dict=return_dict,
+            #     )
+
+            #     cd_hidden_states = cd_outputs[0]
+            #     cd_logits = self.lm_head(cd_hidden_states)
+
+            #     del cd_hidden_states, cd_outputs
+
             #     shift_logits_clone = shift_logits.clone()
             #     shift_cd_logits = cd_logits[..., :-1, :].contiguous()
             #     shift_cd_logits = shift_cd_logits.view(-1, self.config.vocab_size)

@@ -76,10 +76,10 @@ def owl_chat(args, tokenizer, model, image_processor):
             # streamer=streamer,
             use_cache=True,
             stopping_criteria=[stopping_criteria],
-            # forward_func="vanilla",
         )
 
     outputs = tokenizer.decode(output_ids[0, input_ids.shape[1] :]).strip()
+    outputs = outputs.replace("</s>", "")
 
     return outputs
 

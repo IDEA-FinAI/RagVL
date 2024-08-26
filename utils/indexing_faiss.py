@@ -8,7 +8,7 @@ from tqdm import tqdm
 import argparse
 import pandas as pd
 
-from FlagEmbedding.visual.modeling import Visualized_BGE
+# from FlagEmbedding.visual.modeling import Visualized_BGE
 import ipdb
 from transformers import AutoModel, CLIPImageProcessor
 from transformers import AutoTokenizer
@@ -390,7 +390,12 @@ if __name__ == "__main__":
             original_data = json.load(f)
 
         # index, index_to_image_id = build_faiss_coco(
-        #     original_data, val_dataset, device, model, model_type=args.model_type,preprocess=preprocess
+        #     original_data,
+        #     val_dataset,
+        #     device,
+        #     model,
+        #     model_type=args.model_type,
+        #     preprocess=preprocess,
         # )
 
     # faiss.write_index(
@@ -405,7 +410,11 @@ if __name__ == "__main__":
     #     json.dump(index_to_image_id, f, indent=4)
 
     index = faiss.read_index(
-        "../datasets/faiss_index/" + args.datasets + "_test_image_InternVL-C.index"
+        "../datasets/faiss_index/"
+        + args.datasets
+        + "_test_image_"
+        + args.model_type
+        + ".index"
     )
     with open(
         "../datasets/" + args.datasets + "_test_image_index_to_id.json", "r"
