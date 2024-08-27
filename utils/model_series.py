@@ -59,7 +59,7 @@ def load_reranker(args, dataset):
     else:
         reranker_model_path = RERANKER_SERIES[dataset][args.series]
 
-    return load_models(reranker_model_path), reranker_model_path
+    return load_models(args, reranker_model_path), reranker_model_path
 
 
 def load_generator(args, dataset):
@@ -71,19 +71,20 @@ def load_generator(args, dataset):
     else:
         generator_model_path = GENERATOR_SERIES[dataset][args.series]
 
-    return load_models(generator_model_path), generator_model_path
+    return load_models(args, generator_model_path), generator_model_path
 
 
-def load_models(model_path):
+def load_models(args, model_path):
+    _model_path = model_path
     model_path = model_path.lower()
 
     if "llava" in model_path:
         from llava.model.builder import load_pretrained_model
 
         tokenizer, model, image_processor, _ = load_pretrained_model(
-            model_path=model_path,
+            model_path=_model_path,
             model_base="liuhaotian/llava-v1.5-13b" if "lora" in model_path else None,
-            model_name=get_model_name_from_path(model_path),
+            model_name=get_model_name_from_path(_model_path),
             # use_flash_attn=True,
         )
 
@@ -91,11 +92,11 @@ def load_models(model_path):
         from mplug_owl2.model.builder import load_pretrained_model
 
         tokenizer, model, image_processor, _ = load_pretrained_model(
-            model_path=model_path,
+            model_path=_model_path,
             model_base=(
                 "MAGAer13/mplug-owl2-llama2-7b" if "lora" in model_path else None
             ),
-            model_name=get_model_name_from_path(model_path),
+            model_name=get_model_name_from_path(_model_path),
         )
 
     elif "qwen-vl" in model_path:
@@ -105,7 +106,7 @@ def load_models(model_path):
 
         if "lora" in model_path:
             model = AutoPeftModelForCausalLM.from_pretrained(
-                model_path,  # path to the output directory
+                _model_path,  # path to the output directory
                 device_map=6,
                 trust_remote_code=True,
             ).eval()
@@ -118,14 +119,14 @@ def load_models(model_path):
 
     elif "internvl" in model_path:
         tokenizer = AutoTokenizer.from_pretrained(
-            model_path, trust_remote_code=True, use_fast=False
+            _model_path, trust_remote_code=True, use_fast=False
         )
 
         if "lora" in model_path:
             print("Loading model...")
             model = (
                 InternVLChatModel.from_pretrained(
-                    model_path,
+                    _model_path,
                     low_cpu_mem_usage=True,
                     torch_dtype=torch.bfloat16,
                     trust_remote_code=True,
@@ -147,7 +148,7 @@ def load_models(model_path):
         else:
             model = (
                 AutoModel.from_pretrained(
-                    model_path,
+                    _model_path,
                     torch_dtype=torch.bfloat16,
                     low_cpu_mem_usage=True,
                     use_flash_attn=True,

@@ -69,7 +69,7 @@ def main():
     args = parser.parse_args()
     print(args)
 
-    tokenizer, generator_model, image_processor, generator_path = load_generator(
+    (tokenizer, generator_model, image_processor), generator_path = load_generator(
         args, "mmqa"
     )
 
