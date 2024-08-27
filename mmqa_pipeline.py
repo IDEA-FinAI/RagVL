@@ -197,7 +197,7 @@ if __name__ == "__main__":
 
     clip_model, preprocess = clip.load("ViT-L/14@336px", device="cuda", jit=False)
 
-    tokenizer, reranker_model, image_processor, reranker_model_path = load_reranker(
+    (tokenizer, reranker_model, image_processor), reranker_model_path = load_reranker(
         args, "mmqa"
     )
 
@@ -205,7 +205,7 @@ if __name__ == "__main__":
         generator_path = reranker_model_path
         generator_model = reranker_model
     else:
-        _, generator_model, _, generator_path = load_generator(args, "mmqa")
+        (_, generator_model, _), generator_path = load_generator(args, "mmqa")
 
     with open("datasets/MMQA_" + args.datasets + "_ImageQ.json", "r") as f:
         val_dataset = json.load(f)
