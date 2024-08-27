@@ -25,3 +25,4 @@ ckpts*
 visualize.py
 attention_visualization
 *.pth
+logs
