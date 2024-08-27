@@ -96,64 +96,98 @@ def load_image(image_file, input_size=448, max_num=12):
 
 
 def internvl_chat(args, tokenizer, model):
-    generation_config = dict(max_new_tokens=1024, do_sample=False)
-    image_files = args.image_file.split(",")
-    pixel_values = []
-    for img in image_files:
-        pixel_values.append(load_image(img, max_num=12).to(torch.bfloat16).cuda())
-
-    num_patches_list = [pixel_val.size(0) for pixel_val in pixel_values]
-    pixel_values = torch.cat(pixel_values, dim=0)
-
-    question = args.query
-    for i in range(len(image_files)):
-        question = "<image>\n" + question
-    response, history = model.chat(
-        tokenizer,
-        pixel_values,
-        question,
-        generation_config,
-        num_patches_list=num_patches_list,
-        history=None,
-        return_history=True,
+    generation_config = dict(
+        max_new_tokens=args.max_new_tokens,
+        do_sample=False,
+        pad_token_id=tokenizer.eos_token_id,
     )
+
+    if args.image_file:
+        image_files = args.image_file.split(",")
+        pixel_values = []
+        for img in image_files:
+            pixel_values.append(load_image(img, max_num=12).to(torch.bfloat16).cuda())
+
+        num_patches_list = [pixel_val.size(0) for pixel_val in pixel_values]
+        pixel_values = torch.cat(pixel_values, dim=0)
+
+        question = args.query
+        question = "<image>\n" * len(image_files) + question
+    else:
+        pixel_values = None
+        num_patches_list = None
+        question = args.query
+
+    with torch.inference_mode():
+        response, _ = model.chat(
+            tokenizer,
+            pixel_values,
+            question,
+            generation_config,
+            num_patches_list=num_patches_list,
+            history=None,
+            return_history=True,
+        )
+
+    torch.cuda.empty_cache()
 
     return response
 
 
 def internvl_eval_relevance(args, tokenizer, model):
     generation_config = dict(
-        max_new_tokens=1024,
+        max_new_tokens=args.max_new_tokens,
         do_sample=False,
         return_dict_in_generate=True,
         output_scores=True,
+        pad_token_id=tokenizer.eos_token_id,
     )
 
     # single-image single-round conversation (单图单轮对话)
     pixel_values = load_image(args.image_file, max_num=12).to(torch.bfloat16).cuda()
     question = "<image>\n" + args.query
-    generation_output = model.chat(
-        tokenizer,
-        pixel_values,
-        question,
-        generation_config,
-    )
+
+    with torch.inference_mode():
+        generation_output = model.chat(
+            tokenizer,
+            pixel_values,
+            question,
+            generation_config,
+        )
 
     logits = generation_output.scores[0][0]
 
-    probs = (
-        torch.nn.functional.softmax(
-            torch.tensor(
-                [
-                    logits[tokenizer("Yes").input_ids[1]],
-                    logits[tokenizer("No").input_ids[1]],
-                ]
-            ),
-            dim=0,
+    if "1b" in args.model_path.lower():
+        probs = (
+            torch.nn.functional.softmax(
+                torch.tensor(
+                    [
+                        logits[tokenizer("Yes").input_ids[0]],
+                        logits[tokenizer("No").input_ids[0]],
+                    ]
+                ),
+                dim=0,
+            )
+            .detach()
+            .cpu()
+            .numpy()
         )
-        .detach()
-        .cpu()
-        .numpy()
-    )
+    elif "2b" in args.model_path.lower():
+        probs = (
+            torch.nn.functional.softmax(
+                torch.tensor(
+                    [
+                        logits[tokenizer("Yes").input_ids[1]],
+                        logits[tokenizer("No").input_ids[1]],
+                    ]
+                ),
+                dim=0,
+            )
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+    torch.cuda.empty_cache()
 
     return probs[0]

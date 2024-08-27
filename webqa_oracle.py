@@ -4,70 +4,9 @@ import json
 from tqdm import tqdm
 import numpy as np
 from utils.metrics import webqa_metrics_approx
+from utils.model_series import load_generator
+from utils.utils import infer
 import argparse
-
-
-from llava.mm_utils import get_model_name_from_path
-from llava.eval.run_llava import llava_chat
-from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat
-from qwenvl.run_qwenvl import qwen_chat
-from internvl_chat.eval.run_internvl import internvl_chat, internvl_eval_relevance
-
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
-from peft import AutoPeftModelForCausalLM
-from internvl_chat.internvl.model.internvl_chat import InternVLChatModel
-
-
-############### Inference ###############
-def infer(
-    model_path,
-    image_file,
-    question,
-    model,
-    tokenizer,
-    image_processor,
-    from_array=False,
-):
-    if "webqa" in model_path:
-        prompt_template = question
-    else:
-        prompt_template = f"""Question: {question}\nAnswer the question with less than eight words based on the provided images."""
-
-    if "qwen-vl" in model_path.lower():
-        output = qwen_chat(image_file, prompt_template, model, tokenizer)
-    else:
-        args = type(
-            "Args",
-            (),
-            {
-                "model_path": model_path,
-                "model_base": None,
-                "model_name": get_model_name_from_path(model_path),
-                "query": prompt_template,
-                "conv_mode": None,
-                "image_file": image_file,
-                "sep": ",",
-                "temperature": 0,
-                "top_p": None,
-                "num_beams": 1,
-                "max_new_tokens": 512,
-            },
-        )()
-
-        if "llava" in model_path:
-            output = llava_chat(
-                args,
-                tokenizer,
-                model,
-                image_processor,
-                from_array=from_array,
-            )
-        elif "mplug-owl2" in model_path:
-            output = owl_chat(args, tokenizer, model, image_processor)
-        elif "internvl" in model_path.lower():
-            output = internvl_chat(args, tokenizer, model)
-
-    return output
 
 
 ############### Noise Injection ###############
@@ -184,117 +123,15 @@ def baseline_generate(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--datasets", type=str, default="test")
+    parser.add_argument("--generator_model", type=str, default="noise_injected_lora")
+    parser.add_argument("--series", type=str, default="llava")
     parser.add_argument("--noise_ratio", type=float, default=0)
     args = parser.parse_args()
     print(args)
 
-    generator_path = "OpenGVLab/InternVL2-2B"
-    # generator_path = "liuhaotian/llava-v1.5-13b"
-    # generator_path = "MAGAer13/mplug-owl2-llama2-7b"
-    # generator_path = "Qwen/Qwen-VL-Chat"
-
-    # generator_path = (
-    #     "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-vanilla-lora"
-    # )
-    # generator_path = (
-    #     "checkpoints/web/mplug-owl2-2epoch-8batch_size-webqa-noise-injected-lora"
-    # )
-    # generator_path = (
-    #     "checkpoints/internvl2_2b_1epoch-8batch_size-webqa-noise-injected-lora"
-    # )
-
-    if "llava" in generator_path:
-        from llava.model.builder import load_pretrained_model
-
-        if "lora" in generator_path:
-            tokenizer, generator_model, image_processor, _ = load_pretrained_model(
-                model_path=generator_path,
-                model_base="liuhaotian/llava-v1.5-13b",
-                model_name=get_model_name_from_path(generator_path),
-            )
-        else:
-            tokenizer, generator_model, image_processor, _ = load_pretrained_model(
-                model_path=generator_path,
-                model_base=None,
-                model_name=get_model_name_from_path(generator_path),
-            )
-
-    elif "mplug-owl2" in generator_path:
-        from mplug_owl2.model.builder import load_pretrained_model
-
-        if "lora" in generator_path:
-            tokenizer, generator_model, image_processor, _ = load_pretrained_model(
-                model_path=generator_path,
-                model_base="MAGAer13/mplug-owl2-llama2-7b",
-                model_name=get_model_name_from_path(generator_path),
-            )
-        else:
-            tokenizer, generator_model, image_processor, _ = load_pretrained_model(
-                model_path=generator_path,
-                model_base=None,
-                model_name=get_model_name_from_path(generator_path),
-            )
-
-    elif "qwen-vl" in generator_path.lower():
-        tokenizer = AutoTokenizer.from_pretrained(
-            "Qwen/Qwen-VL-Chat", trust_remote_code=True
-        )
-
-        if "lora" in generator_path:
-            generator_model = AutoPeftModelForCausalLM.from_pretrained(
-                generator_path,  # path to the output directory
-                device_map="auto",
-                trust_remote_code=True,
-            ).eval()
-        else:
-            generator_model = AutoModelForCausalLM.from_pretrained(
-                "Qwen/Qwen-VL-Chat", device_map="auto", trust_remote_code=True
-            ).eval()
-
-        image_processor = None
-
-    elif "internvl" in generator_path.lower():
-        tokenizer = AutoTokenizer.from_pretrained(
-            generator_path, trust_remote_code=True, use_fast=False
-        )
-
-        if "lora" in generator_path:
-            print("Loading model...")
-            generator_model = (
-                InternVLChatModel.from_pretrained(
-                    generator_path,
-                    low_cpu_mem_usage=True,
-                    torch_dtype=torch.bfloat16,
-                    trust_remote_code=True,
-                )
-                .eval()
-                .cuda()
-            )
-
-            if generator_model.config.use_backbone_lora:
-                generator_model.vision_model.merge_and_unload()
-                generator_model.vision_model = generator_model.vision_model.model
-                generator_model.config.use_backbone_lora = 0
-            if generator_model.config.use_llm_lora:
-                generator_model.language_model.merge_and_unload()
-                generator_model.language_model = generator_model.language_model.model
-                generator_model.config.use_llm_lora = 0
-
-            print("Done!")
-        else:
-            generator_model = (
-                AutoModel.from_pretrained(
-                    generator_path,
-                    torch_dtype=torch.bfloat16,
-                    low_cpu_mem_usage=True,
-                    use_flash_attn=True,
-                    trust_remote_code=True,
-                )
-                .eval()
-                .cuda()
-            )
-
-        image_processor = None
+    tokenizer, generator_model, image_processor, generator_path = load_generator(
+        args, "webqa"
+    )
 
     if args.datasets == "test":
         with open("datasets/WebQA_test_image.json", "r") as f:

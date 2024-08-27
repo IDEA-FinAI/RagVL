@@ -5,51 +5,13 @@ import ipdb
 import json
 from tqdm import tqdm
 from utils.indexing_faiss import text_to_image
+from utils.utils import cal_relevance
+from utils.model_series import load_reranker
 import pandas as pd
 import argparse
 
-from llava.mm_utils import get_model_name_from_path
-from llava.eval.run_llava import llava_eval_relevance
-from mplug_owl2.evaluate.run_mplug_owl2 import owl_eval_relevance
-from qwenvl.run_qwenvl import qwen_eval_relevance
-from peft import AutoPeftModelForCausalLM
-from transformers import AutoTokenizer, AutoModelForCausalLM
-
-
-def cal_relevance(model_path, image_path, question, model, tokenizer, image_processor):
-
-    if "qwen-vl" in model_path.lower():
-        prob = qwen_eval_relevance(image_path, question, model, tokenizer)
-    else:
-        args = type(
-            "Args",
-            (),
-            {
-                "model_path": model_path,
-                "model_base": None,
-                "model_name": get_model_name_from_path(model_path),
-                "query": question,
-                "conv_mode": None,
-                "image_file": image_path,
-                "sep": ",",
-                "temperature": 0,
-                "top_p": None,
-                "num_beams": 1,
-                "max_new_tokens": 512,
-            },
-        )()
-
-        if "llava" in model_path:
-            prob = llava_eval_relevance(args, tokenizer, model, image_processor)
-        elif "mplug-owl2" in model_path:
-            prob = owl_eval_relevance(args, tokenizer, model, image_processor)
-
-    return prob
-
 
 # ------------- CLIP + Rerank -------------
-
-
 def clip_rerank_generate(
     original_data,
     val_dataset,
@@ -176,75 +138,19 @@ def clip_rerank_generate(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--reranker_model", type=str, default="caption_lora")
+    parser.add_argument("--series", type=str, default="llava")
     parser.add_argument("--filter", type=float, default=0)
     parser.add_argument("--rerank_off", default=False, action="store_true")
     parser.add_argument("--clip_topk", type=int, default=20)
 
     args = parser.parse_args()
     print(args)
-
-    ################### reranker_model ###################
-    if args.reranker_model == "base":
-        reranker_model_path = "liuhaotian/llava-v1.5-13b"
-        # reranker_model_path = "MAGAer13/mplug-owl2-llama2-7b"
-        # reranker_model_path = "Qwen/Qwen-VL-Chat"
-
-    elif args.reranker_model == "caption_lora":
-        reranker_model_path = "checkpoints/coco/llava-v1.5-13b-1epoch-16batch_size-MSCOCO-reranker-caption-lora"
-
-    if "llava" in reranker_model_path:
-        from llava.model.builder import load_pretrained_model
-
-        if "lora" in reranker_model_path:
-            tokenizer, reranker_model, image_processor, _ = load_pretrained_model(
-                model_path=reranker_model_path,
-                model_base="liuhaotian/llava-v1.5-13b",
-                model_name=get_model_name_from_path(reranker_model_path),
-                # use_flash_attn=True,
-            )
-        else:
-            tokenizer, reranker_model, image_processor, _ = load_pretrained_model(
-                model_path=reranker_model_path,
-                model_base=None,
-                model_name=get_model_name_from_path(reranker_model_path),
-            )
-
-    elif "mplug-owl2" in reranker_model_path:
-        from mplug_owl2.model.builder import load_pretrained_model
-
-        if "lora" in reranker_model_path:
-            tokenizer, reranker_model, image_processor, _ = load_pretrained_model(
-                model_path=reranker_model_path,
-                model_base="MAGAer13/mplug-owl2-llama2-7b",
-                model_name=get_model_name_from_path(reranker_model_path),
-            )
-        else:
-            tokenizer, reranker_model, image_processor, _ = load_pretrained_model(
-                model_path=reranker_model_path,
-                model_base=None,
-                model_name=get_model_name_from_path(reranker_model_path),
-            )
-
-    elif "qwen-vl" in reranker_model_path.lower():
-        tokenizer = AutoTokenizer.from_pretrained(
-            "Qwen/Qwen-VL-Chat", trust_remote_code=True
-        )
-
-        if "lora" in reranker_model_path:
-            reranker_model = AutoPeftModelForCausalLM.from_pretrained(
-                reranker_model_path,  # path to the output directory
-                device_map=6,
-                trust_remote_code=True,
-            ).eval()
-        else:
-            reranker_model = AutoModelForCausalLM.from_pretrained(
-                "Qwen/Qwen-VL-Chat", device_map="cuda", trust_remote_code=True
-            ).eval()
-
-        image_processor = None
-
     # ['RN50', 'RN101', 'RN50x4', 'RN50x16', 'RN50x64', 'ViT-B/32', 'ViT-B/16', 'ViT-L/14', 'ViT-L/14@336px']
     clip_model, preprocess = clip.load("ViT-L/14@336px", device="cuda", jit=False)
+
+    tokenizer, reranker_model, image_processor, reranker_model_path = load_reranker(
+        args, "mscoco"
+    )
 
     ids = []
     captions = []

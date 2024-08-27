@@ -1,8 +1,8 @@
 set -x
 
 GPUS=${GPUS:-4}
-BATCH_SIZE=${BATCH_SIZE:-8}
-PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE:-2}
+BATCH_SIZE=${BATCH_SIZE:-16}
+PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE:-4}
 GRADIENT_ACC=$((BATCH_SIZE / PER_DEVICE_BATCH_SIZE / GPUS))
 
 
@@ -10,9 +10,9 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 export MASTER_PORT=34229
 export TF_CPP_MIN_LOG_LEVEL=3
 export LAUNCHER=pytorch
-export CUDA_VISIBLE_DEVICES=3,4,5,6
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 
-OUTPUT_DIR='/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/checkpoints/internvl2_2b_2epoch-8batch_size-webqa-noise-injected-lora'
+OUTPUT_DIR='/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/checkpoints/internvl2_1b_1epoch-16batch_size-webqa-reranker-caption-lora'
 
 if [ ! -d "$OUTPUT_DIR" ]; then
   mkdir -p "$OUTPUT_DIR"
@@ -29,11 +29,11 @@ torchrun \
   --master_addr=127.0.0.1 \
   --nproc_per_node=${GPUS} \
   --master_port=${MASTER_PORT} \
-  /data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/internvl_chat/internvl/train/internvl_chat_finetune.py \
-  --model_name_or_path "OpenGVLab/InternVL2-2B" \
-  --conv_style "internlm2-chat" \
+  /data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/InternVL/internvl_chat/internvl/train/internvl_chat_finetune.py \
+  --model_name_or_path "OpenGVLab/InternVL2-1B" \
+  --conv_style "Hermes-2" \
   --output_dir ${OUTPUT_DIR} \
-  --meta_path "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/internvl_chat/shell/data/internvl_2_finetune_webqa_qa.json" \
+  --meta_path "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/InternVL/internvl_chat/shell/data/internvl_2_finetune_webqa_rerank.json" \
   --overwrite_output_dir True \
   --force_image_size 448 \
   --max_dynamic_patch 6 \
@@ -65,6 +65,6 @@ torchrun \
   --dynamic_image_size True \
   --use_thumbnail True \
   --ps_version 'v2' \
-  --deepspeed "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/internvl_chat/zero_stage1_config.json" \
+  --deepspeed "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/InternVL/internvl_chat/zero_stage1_config.json" \
   --report_to "tensorboard" \
   2>&1 | tee -a "${OUTPUT_DIR}/training_log.txt"

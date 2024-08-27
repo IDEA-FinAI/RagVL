@@ -7,101 +7,33 @@ import json
 from tqdm import tqdm
 from utils.metrics import webqa_metrics_approx
 from utils.indexing_faiss import text_to_image
-
+from utils.model_series import load_generator, load_reranker
+from utils.utils import cal_relevance, infer
 import argparse
 
-from llava.mm_utils import get_model_name_from_path
-from llava.eval.run_llava import llava_chat, llava_eval_relevance
-from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat, owl_eval_relevance
-from qwenvl.run_qwenvl import qwen_chat, qwen_eval_relevance
-from internvl_chat.eval.run_internvl import internvl_chat, internvl_eval_relevance
-from peft import AutoPeftModelForCausalLM
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
-from internvl_chat.internvl.model.internvl_chat import InternVLChatModel
 
+def load_datasets(args):
+    with open("datasets/WebQA_" + args.datasets + "_image.json", "r") as f:
+        val_dataset = json.load(f)
 
-def cal_relevance(model_path, image_path, question, model, tokenizer, image_processor):
-
-    if "qwen-vl" in model_path.lower():
-        prob = qwen_eval_relevance(image_path, question, model, tokenizer)
+    if args.noise_ratio == 0:
+        with open(
+            "datasets/WebQA_" + args.datasets + "_image_index_to_id.json", "r"
+        ) as f:
+            index_to_image_id = json.load(f)
     else:
-        args = type(
-            "Args",
-            (),
-            {
-                "model_path": model_path,
-                "model_base": None,
-                "model_name": get_model_name_from_path(model_path),
-                "query": question,
-                "conv_mode": None,
-                "image_file": image_path,
-                "sep": ",",
-                "temperature": 0,
-                "top_p": None,
-                "num_beams": 1,
-                "max_new_tokens": 512,
-            },
-        )()
+        with open(
+            "datasets/WebQA_test_image_index_to_id_noise"
+            + f"{int(args.noise_ratio * 100)}.json",
+            "r",
+        ) as f:
+            index_to_image_id = json.load(f)
 
-        if "llava" in model_path:
-            prob = llava_eval_relevance(args, tokenizer, model, image_processor)
-        elif "mplug-owl2" in model_path:
-            prob = owl_eval_relevance(args, tokenizer, model, image_processor)
-        elif "internvl" in model_path.lower():
-            prob = internvl_eval_relevance(args, tokenizer, model)
+    index = faiss.read_index(
+        "datasets/faiss_index/WebQA_" + args.datasets + "_image.index"
+    )
 
-    return prob
-
-
-def infer(
-    model_path,
-    image_file,
-    question,
-    model,
-    tokenizer,
-    image_processor,
-    from_array=False,
-):
-    if "webqa" in model_path:
-        prompt_template = question
-    else:
-        prompt_template = f"""Question: {question}\nAnswer the question with less than eight words based on the provided images."""
-
-    if "qwen-vl" in model_path.lower():
-        output = qwen_chat(image_file, prompt_template, model, tokenizer)
-    else:
-        args = type(
-            "Args",
-            (),
-            {
-                "model_path": model_path,
-                "model_base": None,
-                "model_name": get_model_name_from_path(model_path),
-                "query": prompt_template,
-                "conv_mode": None,
-                "image_file": image_file,
-                "sep": ",",
-                "temperature": 0,
-                "top_p": None,
-                "num_beams": 1,
-                "max_new_tokens": 512,
-            },
-        )()
-
-        if "llava" in model_path:
-            output = llava_chat(
-                args,
-                tokenizer,
-                model,
-                image_processor,
-                from_array=from_array,
-            )
-        elif "mplug-owl2" in model_path:
-            output = owl_chat(args, tokenizer, model, image_processor)
-        elif "internvl" in model_path.lower():
-            output = internvl_chat(args, tokenizer, model)
-
-    return output
+    return val_dataset, index, index_to_image_id
 
 
 # ------------- CLIP + Rerank -------------
@@ -302,7 +234,14 @@ def clip_rerank_generate(
 
         f.write("}")
 
-    with open("webqa_distribution_prob_" + mode + ".json", "w") as json_file:
+    with open(
+        "logs/webqa/"
+        + reranker_model_path.split("/")[1]
+        + "_webqa_distribution_prob_"
+        + mode
+        + ".json",
+        "w",
+    ) as json_file:
         json.dump(probabilities, json_file, indent=4)
 
     pre = retrieval_correct / retrieval_num
@@ -341,6 +280,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--reranker_model", type=str, default="caption_lora")
     parser.add_argument("--generator_model", type=str, default="noise_injected_lora")
+    parser.add_argument("--series", type=str, default="llava")
     parser.add_argument("--datasets", type=str, default="test")
     parser.add_argument("--filter", type=float, default=0)
     parser.add_argument("--rerank_off", default=False, action="store_true")
@@ -350,260 +290,26 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    ################### reranker_model ###################
-
-    if args.reranker_model == "base":
-        # reranker_model_path = "liuhaotian/llava-v1.5-13b"
-        # reranker_model_path = "MAGAer13/mplug-owl2-llama2-7b"
-        # reranker_model_path = "Qwen/Qwen-VL-Chat"
-        reranker_model_path = "OpenGVLab/InternVL2-2B"
-
-    elif args.reranker_model == "caption_lora":
-        # reranker_model_path = "checkpoints/web/llava-v1.5-13b-2epoch-16batch_size-webqa-reranker-caption-lora"
-        # reranker_model_path = (
-        #     "checkpoints/mplug-owl2-2epoch-8batch_size-webqa-reranker-caption-lora"
-        # )
-        # reranker_model_path = "checkpoints/web/qwen-vl-chat-2epoch-4batch_size-webqa-reranker-caption-lora-new"
-
-        reranker_model_path = (
-            "checkpoints/internvl2_2b_1epoch-16batch_size-webqa-reranker-caption-lora"
-        )
-
-    elif args.reranker_model == "blend_caption_lora":
-        reranker_model_path = (
-            "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-blend-caption-lora"
-        )
-
-    if "llava" in reranker_model_path:
-        from llava.model.builder import load_pretrained_model
-
-        if "lora" in reranker_model_path:
-            tokenizer, reranker_model, image_processor, _ = load_pretrained_model(
-                model_path=reranker_model_path,
-                model_base="liuhaotian/llava-v1.5-13b",
-                model_name=get_model_name_from_path(reranker_model_path),
-                # use_flash_attn=True,
-            )
-        else:
-            tokenizer, reranker_model, image_processor, _ = load_pretrained_model(
-                model_path=reranker_model_path,
-                model_base=None,
-                model_name=get_model_name_from_path(reranker_model_path),
-            )
-
-    elif "mplug-owl2" in reranker_model_path:
-        from mplug_owl2.model.builder import load_pretrained_model
-
-        if "lora" in reranker_model_path:
-            tokenizer, reranker_model, image_processor, _ = load_pretrained_model(
-                model_path=reranker_model_path,
-                model_base="MAGAer13/mplug-owl2-llama2-7b",
-                model_name=get_model_name_from_path(reranker_model_path),
-            )
-        else:
-            tokenizer, reranker_model, image_processor, _ = load_pretrained_model(
-                model_path=reranker_model_path,
-                model_base=None,
-                model_name=get_model_name_from_path(reranker_model_path),
-            )
-
-    elif "qwen-vl" in reranker_model_path.lower():
-        tokenizer = AutoTokenizer.from_pretrained(
-            "Qwen/Qwen-VL-Chat", trust_remote_code=True
-        )
-
-        if "lora" in reranker_model_path:
-            reranker_model = AutoPeftModelForCausalLM.from_pretrained(
-                reranker_model_path,  # path to the output directory
-                device_map=6,
-                trust_remote_code=True,
-            ).eval()
-        else:
-            reranker_model = AutoModelForCausalLM.from_pretrained(
-                "Qwen/Qwen-VL-Chat", device_map=2, trust_remote_code=True
-            ).eval()
-
-        image_processor = None
-
-    elif "internvl" in reranker_model_path.lower():
-        tokenizer = AutoTokenizer.from_pretrained(
-            reranker_model_path, trust_remote_code=True, use_fast=False
-        )
-
-        if "lora" in reranker_model_path:
-            print("Loading model...")
-            reranker_model = (
-                InternVLChatModel.from_pretrained(
-                    reranker_model_path,
-                    low_cpu_mem_usage=True,
-                    torch_dtype=torch.bfloat16,
-                    trust_remote_code=True,
-                )
-                .eval()
-                .cuda()
-            )
-
-            if reranker_model.config.use_backbone_lora:
-                reranker_model.vision_model.merge_and_unload()
-                reranker_model.vision_model = reranker_model.vision_model.model
-                reranker_model.config.use_backbone_lora = 0
-            if reranker_model.config.use_llm_lora:
-                reranker_model.language_model.merge_and_unload()
-                reranker_model.language_model = reranker_model.language_model.model
-                reranker_model.config.use_llm_lora = 0
-
-            print("Done!")
-        else:
-            reranker_model = (
-                AutoModel.from_pretrained(
-                    reranker_model_path,
-                    torch_dtype=torch.bfloat16,
-                    low_cpu_mem_usage=True,
-                    use_flash_attn=True,
-                    trust_remote_code=True,
-                )
-                .eval()
-                .cuda()
-            )
-
-        image_processor = None
-
-    ################### generator_model ###################
-    if args.generator_model == "base":
-        # generator_path = "liuhaotian/llava-v1.5-13b"
-        # _, generator_model, _, _ = load_pretrained_model(
-        #     model_path=generator_path,
-        #     model_base=None,
-        #     model_name=get_model_name_from_path(generator_path),
-        # )
-
-        # generator_path = "Qwen/Qwen-VL-Chat"
-        # generator_model = AutoModelForCausalLM.from_pretrained(
-        #     generator_path,  # path to the output directory
-        #     device_map=7,
-        #     trust_remote_code=True,
-        # ).eval()
-
-        # generator_path = "MAGAer13/mplug-owl2-llama2-7b"
-        # _, generator_model, _, _ = load_pretrained_model(
-        #     model_path=generator_path,
-        #     model_base=None,
-        #     model_name=get_model_name_from_path(generator_path),
-        # )
-
-        generator_path = "OpenGVLab/InternVL2-2B"
-        generator_model = (
-            AutoModel.from_pretrained(
-                generator_path,
-                torch_dtype=torch.bfloat16,
-                low_cpu_mem_usage=True,
-                use_flash_attn=True,
-                trust_remote_code=True,
-            )
-            .eval()
-            .cuda()
-        )
-
-    elif args.generator_model == "blend_lora":
-        generator_path = reranker_model_path
-        generator_model = reranker_model
-
-    elif args.generator_model == "noise_injected_lora":
-        # generator_path = "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-noise-injected-lora"
-        # _, generator_model, _, _ = load_pretrained_model(
-        #     model_path=generator_path,
-        #     model_base="liuhaotian/llava-v1.5-13b",
-        #     model_name=get_model_name_from_path(generator_path),
-        # )
-
-        # generator_path = (
-        #     "checkpoints/qwen-vl-chat-2epoch-2batch_size-webqa-noise-injected-lora-new"
-        # )
-        # generator_model = AutoPeftModelForCausalLM.from_pretrained(
-        #     generator_path,  # path to the output directory
-        #     device_map=7,
-        #     trust_remote_code=True,
-        # ).eval()
-
-        # generator_path = (
-        #     "checkpoints/web/mplug-owl2-2epoch-8batch_size-webqa-noise-injected-lora"
-        # )
-        # _, generator_model, _, _ = load_pretrained_model(
-        #     model_path=generator_path,
-        #     model_base="MAGAer13/mplug-owl2-llama2-7b",
-        #     model_name=get_model_name_from_path(generator_path),
-        # )
-
-        generator_path = (
-            "checkpoints/internvl2_2b_1epoch-8batch_size-webqa-noise-injected-lora"
-        )
-        print("Loading model...")
-        generator_model = (
-            InternVLChatModel.from_pretrained(
-                generator_path,
-                low_cpu_mem_usage=True,
-                torch_dtype=torch.bfloat16,
-                trust_remote_code=True,
-            )
-            .eval()
-            .cuda()
-        )
-
-        if generator_model.config.use_backbone_lora:
-            generator_model.vision_model.merge_and_unload()
-            generator_model.vision_model = generator_model.vision_model.model
-            generator_model.config.use_backbone_lora = 0
-        if generator_model.config.use_llm_lora:
-            generator_model.language_model.merge_and_unload()
-            generator_model.language_model = generator_model.language_model.model
-            generator_model.config.use_llm_lora = 0
-
-        print("Done!")
-
-    elif args.generator_model == "None":
-        generator_path = None
-        generator_model = None
-
     # ['RN50', 'RN101', 'RN50x4', 'RN50x16', 'RN50x64', 'ViT-B/32', 'ViT-B/16', 'ViT-L/14', 'ViT-L/14@336px']
     clip_model, preprocess = clip.load("ViT-L/14@336px", device="cuda", jit=False)
 
-    if args.datasets == "test":
-        with open("datasets/WebQA_test_image.json", "r") as f:
-            val_dataset = json.load(f)
+    tokenizer, reranker_model, image_processor, reranker_model_path = load_reranker(
+        args, "webqa"
+    )
+    if args.generator_model == "blend_lora":
+        generator_model = reranker_model
+        generator_path = reranker_model_path
+    elif args.generator_model == "None":
+        generator_model = None
+        generator_path = None
+    else:
+        _, generator_model, _, generator_model_path = load_generator(args, "webqa")
 
-        if args.noise_ratio == 0:
-            with open("datasets/WebQA_test_image_index_to_id.json", "r") as f:
-                index_to_image_id = json.load(f)
-        else:
-            with open(
-                "datasets/WebQA_test_image_index_to_id_noise"
-                + f"{int(args.noise_ratio * 100)}.json",
-                "r",
-            ) as f:
-                index_to_image_id = json.load(f)
-
-        index = faiss.read_index("datasets/faiss_index/WebQA_test_image.index")
-
-    elif args.datasets == "dev":
-        with open("datasets/WebQA_dev_image.json", "r") as f:
-            val_dataset = json.load(f)
-
-        with open("datasets/WebQA_dev_image_index_to_id.json", "r") as f:
-            index_to_image_id = json.load(f)
-
-        index = faiss.read_index("datasets/faiss_index/WebQA_dev_image.index")
-
-    elif args.datasets == "train":
-        with open("datasets/WebQA_train_image.json", "r") as f:
-            val_dataset = json.load(f)
-
-        with open("datasets/WebQA_train_image_index_to_id.json", "r") as f:
-            index_to_image_id = json.load(f)
-
-        index = faiss.read_index("datasets/faiss_index/WebQA_train_image.index")
+    val_dataset, index, index_to_image_id = load_datasets(args)
 
     save_path = (
-        reranker_model_path.split("/")[1]
+        "logs/webqa/"
+        + reranker_model_path.split("/")[1]
         + "_webqa_"
         + (
             "_".join(

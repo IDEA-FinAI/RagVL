@@ -236,8 +236,8 @@ class InternVLChatModel(PreTrainedModel):
 
         input_ids = input_ids.reshape(B * N)
         selected = input_ids == self.img_context_token_id
-        if labels is not None:
-            input_embeds_cd = inject_noise(input_embeds, vit_embeds, selected, B, N, C)
+        # if labels is not None:
+        #     input_embeds_cd = inject_noise(input_embeds, vit_embeds, selected, B, N, C)
         try:
             input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds.reshape(
                 -1, C

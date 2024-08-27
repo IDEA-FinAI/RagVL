@@ -7,99 +7,19 @@ import json
 from tqdm import tqdm
 from utils.metrics import mmqa_metrics_approx
 from utils.indexing_faiss import text_to_image
-
+from utils.model_series import load_generator, load_reranker
+from utils.utils import infer, cal_relevance
 import argparse
-
-from llava.mm_utils import get_model_name_from_path
-from llava.eval.run_llava import llava_chat, llava_eval_relevance
-from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat, owl_eval_relevance
-
-
-def cal_relevance(
-    reranker_model_path, image_path, question, model, tokenizer, image_processor
-):
-
-    args = type(
-        "Args",
-        (),
-        {
-            "model_path": reranker_model_path,
-            "model_base": None,
-            "model_name": get_model_name_from_path(reranker_model_path),
-            "query": question,
-            "conv_mode": None,
-            "image_file": image_path,
-            "sep": ",",
-            "temperature": 0,
-            "top_p": None,
-            "num_beams": 1,
-            "max_new_tokens": 512,
-        },
-    )()
-
-    if "llava" in reranker_model_path:
-        prob = llava_eval_relevance(args, tokenizer, model, image_processor)
-    elif "mplug-owl2" in reranker_model_path:
-        prob = owl_eval_relevance(args, tokenizer, model, image_processor)
-    # elif "qwenvl" in reranker_model_path:
-    #     output = qwen_eval_relevance(args, tokenizer, model, image_processor)
-
-    return prob
-
-
-def infer(
-    model_path, image_file, question, model, tokenizer, image_processor, from_array=True
-):
-    if "mmqa" in model_path:
-        prompt_template = question
-    else:
-        prompt_template = f"""Question: {question}\nAnswer the question with less than eight words based on the provided images."""
-
-    args = type(
-        "Args",
-        (),
-        {
-            "model_path": model_path,
-            "model_base": None,
-            "model_name": get_model_name_from_path(model_path),
-            "query": prompt_template,
-            "conv_mode": None,
-            "image_file": image_file,
-            "sep": ",",
-            "temperature": 0,
-            "top_p": None,
-            "num_beams": 1,
-            "max_new_tokens": 512,
-        },
-    )()
-
-    if "llava" in model_path:
-        output = llava_chat(
-            args,
-            tokenizer,
-            model,
-            image_processor,
-            from_array=from_array,
-        )
-    elif "mplug-owl2" in model_path:
-        output = owl_chat(args, tokenizer, model, image_processor)
-
-    # elif "qwenvl" in model_path:
-    #     output = qwen_chat(args, tokenizer, model, image_processor)
-
-    return output
 
 
 # ------------- CLIP + Rerank -------------
-
-
 def clip_rerank_generate(
     val_dataset,
     ind,
     index_to_image_id,
     reranker_model_path,
     generator_path,
-    mm_model,
+    reranker_model,
     clip_model,
     tokenizer,
     image_processor,
@@ -164,7 +84,7 @@ def clip_rerank_generate(
                         reranker_model_path,
                         img_path,
                         query,
-                        mm_model,
+                        reranker_model,
                         tokenizer,
                         image_processor,
                     )
@@ -240,7 +160,14 @@ def clip_rerank_generate(
 
         f.write("}")
 
-    with open("mmqa_distribution_prob_" + mode + ".json", "w") as json_file:
+    with open(
+        "logs/mmqa/"
+        + reranker_model_path.split("/")[1]
+        + "_mmqa_distribution_prob_"
+        + mode
+        + ".json",
+        "w",
+    ) as json_file:
         json.dump(probabilities, json_file, indent=4)
 
     pre = retrieval_correct / retrieval_num
@@ -270,74 +197,29 @@ if __name__ == "__main__":
 
     clip_model, preprocess = clip.load("ViT-L/14@336px", device="cuda", jit=False)
 
-    ################### reranker_model ###################
-    if args.reranker_model == "base":
-        reranker_model_path = "liuhaotian/llava-v1.5-13b"
+    tokenizer, reranker_model, image_processor, reranker_model_path = load_reranker(
+        args, "mmqa"
+    )
 
-    elif args.reranker_model == "caption_lora":
-        reranker_model_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-16batch_size-mmqa-reranker-caption-lora"
-
-    elif args.reranker_model == "blend_caption_lora":
-        reranker_model_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-blend-caption-lora"
-
-    if "llava" in reranker_model_path:
-        from llava.model.builder import load_pretrained_model
-
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=reranker_model_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(reranker_model_path),
-        )
-
-    elif "mplug-owl2" in reranker_model_path:
-        from mplug_owl2.model.builder import load_pretrained_model
-
-        tokenizer, mm_model, image_processor, _ = load_pretrained_model(
-            model_path=reranker_model_path,
-            model_base="MAGAer13/mplug-owl2-llama2-7b",
-            model_name=get_model_name_from_path(reranker_model_path),
-        )
-
-    ################### generator_model ###################
-    if args.generator_model == "base":
-        generator_path = "liuhaotian/llava-v1.5-13b"
-        _, generator_model, _, _ = load_pretrained_model(
-            model_path=generator_path,
-            model_base=None,
-            model_name=get_model_name_from_path(generator_path),
-        )
-    elif args.generator_model == "blend_lora":
+    if args.generator_model == "blend_lora":
         generator_path = reranker_model_path
-        generator_model = mm_model
+        generator_model = reranker_model
+    else:
+        _, generator_model, _, generator_path = load_generator(args, "mmqa")
 
-    elif args.generator_model == "noise_injected_lora":
-        generator_path = "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-noise-injected-lora"
-        _, generator_model, _, _ = load_pretrained_model(
-            model_path=generator_path,
-            model_base="liuhaotian/llava-v1.5-13b",
-            model_name=get_model_name_from_path(generator_path),
-        )
+    with open("datasets/MMQA_" + args.datasets + "_ImageQ.json", "r") as f:
+        val_dataset = json.load(f)
 
-    if args.datasets == "test":
-        with open("datasets/MMQA_test_ImageQ.json", "r") as f:
-            val_dataset = json.load(f)
+    with open("datasets/MMQA_" + args.datasets + "_ImageQ_index_to_id.json", "r") as f:
+        index_to_image_id = json.load(f)
 
-        with open("datasets/MMQA_test_ImageQ_index_to_id.json", "r") as f:
-            index_to_image_id = json.load(f)
-
-        index = faiss.read_index("datasets/faiss_index/MMQA_test_ImageQ.index")
-
-    elif args.datasets == "dev":
-        with open("datasets/MMQA_dev_ImageQ.json", "r") as f:
-            val_dataset = json.load(f)
-
-        with open("datasets/MMQA_dev_ImageQ_index_to_id.json", "r") as f:
-            index_to_image_id = json.load(f)
-
-        index = faiss.read_index("datasets/faiss_index/MMQA_dev_ImageQ.index")
+    index = faiss.read_index(
+        "datasets/faiss_index/MMQA_" + args.datasets + "_ImageQ.index"
+    )
 
     save_path = (
-        reranker_model_path.split("/")[1]
+        "logs/mmqa/"
+        + reranker_model_path.split("/")[1]
         + "_mmqa_"
         + (
             "_".join(
@@ -368,7 +250,7 @@ if __name__ == "__main__":
             index_to_image_id,
             reranker_model_path,
             generator_path,
-            mm_model,
+            reranker_model,
             clip_model,
             tokenizer,
             image_processor,
