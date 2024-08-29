@@ -187,6 +187,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--reranker_model", type=str, default="caption_lora")
     parser.add_argument("--generator_model", type=str, default="noise_injected_lora")
+    parser.add_argument("--series", type=str, default="llava")
     parser.add_argument("--datasets", type=str, default="test")
     parser.add_argument("--filter", type=float, default=0)
     parser.add_argument("--rerank_off", default=False, action="store_true")
@@ -262,3 +263,5 @@ if __name__ == "__main__":
             use_caption=True if "caption" in args.reranker_model else False,
             topk=args.clip_topk,
         )
+
+    print(args)

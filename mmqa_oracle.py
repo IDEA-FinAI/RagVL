@@ -90,6 +90,8 @@ def main():
             generator_model,
         )
 
+    print(args)
+
 
 if __name__ == "__main__":
     main()

@@ -8,7 +8,7 @@ from tqdm import tqdm
 import argparse
 import pandas as pd
 
-# from FlagEmbedding.visual.modeling import Visualized_BGE
+from FlagEmbedding.visual.modeling import Visualized_BGE
 import ipdb
 from transformers import AutoModel, CLIPImageProcessor
 from transformers import AutoTokenizer
@@ -167,7 +167,7 @@ def text_to_image(text, model, ind, topk=4, model_type="clip", tokenizer=None):
     if model_type == "clip":
         text_tokens = clip.tokenize([text], truncate=True)
         text_features = model.encode_text(text_tokens.to(device))
-    elif model_type == "bge":
+    elif "bge" in model_type:
         text_features = model.encode(text=text)
     else:
         prefix = "summarize:"

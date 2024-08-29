@@ -1,0 +1,9 @@
+{
+    "webqa_qa": {
+        "root": "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/finetune/tasks",
+        "annotation": "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/finetune/tasks/MMQA_train_QA_internvl.jsonl",
+        "data_augment": false,
+        "repeat_time": 1,
+        "length": 2099
+    }
+}

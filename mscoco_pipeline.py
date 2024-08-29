@@ -6,7 +6,7 @@ import json
 from tqdm import tqdm
 from utils.indexing_faiss import text_to_image
 from utils.utils import cal_relevance
-from utils.model_series import load_reranker
+from utils.model_series import load_reranker, load_clip
 import pandas as pd
 import argparse
 
@@ -19,9 +19,11 @@ def clip_rerank_generate(
     index_to_image_id,
     model_path,
     reranker_model,
-    clip_model,
     tokenizer,
     image_processor,
+    clip_model,
+    clip_tokenizer,
+    clip_type,
     filter,
     rerank_off,
     topk=20,
@@ -48,7 +50,7 @@ def clip_rerank_generate(
         retrieved_imgs = []
         rerank_imgs = {}
 
-        D, I = text_to_image(cap, clip_model, ind, topk)
+        D, I = text_to_image(cap, clip_model, ind, topk, clip_type, clip_tokenizer)
         for d, j in zip(D[0], I[0]):
             img_id = index_to_image_id[str(j)]
             retrieved_imgs.append(img_id)
@@ -137,6 +139,7 @@ def clip_rerank_generate(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--clip_type", type=str, default="clip")
     parser.add_argument("--reranker_model", type=str, default="caption_lora")
     parser.add_argument("--series", type=str, default="llava")
     parser.add_argument("--filter", type=float, default=0)
@@ -145,8 +148,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     print(args)
-    # ['RN50', 'RN101', 'RN50x4', 'RN50x16', 'RN50x64', 'ViT-B/32', 'ViT-B/16', 'ViT-L/14', 'ViT-L/14@336px']
-    clip_model, preprocess = clip.load("ViT-L/14@336px", device="cuda", jit=False)
+
+    clip_model, _, clip_tokenizer = load_clip(args)
 
     (tokenizer, reranker_model, image_processor), reranker_model_path = load_reranker(
         args, "mscoco"
@@ -170,7 +173,9 @@ if __name__ == "__main__":
     with open("datasets/coco_test_image_index_to_id.json", "r") as f:
         index_to_image_id = json.load(f)
 
-    index = faiss.read_index("datasets/faiss_index/coco_test_image.index")
+    index = faiss.read_index(
+        "datasets/faiss_index/coco_test_image_" + args.clip_type + ".index"
+    )
 
     with torch.no_grad():
         clip_rerank_generate(
@@ -180,9 +185,11 @@ if __name__ == "__main__":
             index_to_image_id,
             reranker_model_path,
             reranker_model,
-            clip_model,
             tokenizer,
             image_processor,
+            clip_model,
+            clip_tokenizer,
+            clip_type=args.clip_type,
             filter=args.filter,
             rerank_off=args.rerank_off,
             topk=args.clip_topk,

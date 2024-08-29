@@ -7,9 +7,10 @@ import json
 from tqdm import tqdm
 from utils.metrics import webqa_metrics_approx
 from utils.indexing_faiss import text_to_image
-from utils.model_series import load_generator, load_reranker
+from utils.model_series import load_generator, load_reranker, load_clip
 from utils.utils import cal_relevance, infer
 import argparse
+from utils.FlagEmbedding.visual.modeling import Visualized_BGE
 
 
 def load_datasets(args):
@@ -30,7 +31,11 @@ def load_datasets(args):
             index_to_image_id = json.load(f)
 
     index = faiss.read_index(
-        "datasets/faiss_index/WebQA_" + args.datasets + "_image.index"
+        "datasets/faiss_index/WebQA_"
+        + args.datasets
+        + "_image_"
+        + args.clip_type
+        + ".index"
     )
 
     return val_dataset, index, index_to_image_id
@@ -46,11 +51,13 @@ def clip_rerank_generate(
     model_path,
     generator_path,
     reranker_model,
-    clip_model,
     tokenizer,
     image_processor,
     generator_model,
     save_path,
+    clip_model,
+    clip_tokenizer,
+    clip_type,
     filter,
     mode,
     rerank_off,
@@ -94,7 +101,9 @@ def clip_rerank_generate(
 
             for item in pos_imgs:
                 pos_source.append(str(item["image_id"]))
-            D, I = text_to_image(question, clip_model, ind, topk)
+            D, I = text_to_image(
+                question, clip_model, ind, topk, clip_type, clip_tokenizer
+            )
             for d, j in zip(D[0], I[0]):
                 img_id = index_to_image_id[str(j)]
                 retrieved_imgs.append(str(img_id))
@@ -278,6 +287,7 @@ def clip_rerank_generate(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--clip_type", type=str, default="clip")
     parser.add_argument("--reranker_model", type=str, default="caption_lora")
     parser.add_argument("--generator_model", type=str, default="noise_injected_lora")
     parser.add_argument("--series", type=str, default="llava")
@@ -290,8 +300,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    # ['RN50', 'RN101', 'RN50x4', 'RN50x16', 'RN50x64', 'ViT-B/32', 'ViT-B/16', 'ViT-L/14', 'ViT-L/14@336px']
-    clip_model, preprocess = clip.load("ViT-L/14@336px", device="cuda", jit=False)
+    clip_model, _, clip_tokenizer = load_clip(args)
 
     (tokenizer, reranker_model, image_processor), reranker_model_path = load_reranker(
         args, "webqa"
@@ -346,11 +355,13 @@ if __name__ == "__main__":
             reranker_model_path,
             generator_path,
             reranker_model,
-            clip_model,
             tokenizer,
             image_processor,
             generator_model,
             save_path,
+            clip_model,
+            clip_tokenizer,
+            clip_type=args.clip_type,
             filter=args.filter,
             mode=args.datasets,
             rerank_off=args.rerank_off,

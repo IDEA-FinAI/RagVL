@@ -152,6 +152,8 @@ def main():
             noise_ratio=args.noise_ratio,
         )
 
+    print(args)
+
 
 if __name__ == "__main__":
     main()
