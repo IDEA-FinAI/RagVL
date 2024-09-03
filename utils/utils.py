@@ -2,7 +2,7 @@ from llava.mm_utils import get_model_name_from_path
 from llava.eval.run_llava import llava_chat, llava_eval_relevance
 from mplug_owl2.evaluate.run_mplug_owl2 import owl_chat, owl_eval_relevance
 from qwenvl.run_qwenvl import qwen_chat, qwen_eval_relevance
-from InternVL.internvl_chat.eval.run_internvl import (
+from internvl_chat.eval.run_internvl import (
     internvl_chat,
     internvl_eval_relevance,
 )
@@ -50,10 +50,12 @@ def infer(
     image_processor,
     from_array=False,
 ):
-    if any(dataset_type in model_path for dataset_type in ("webqa", "mmqa")):
+    if "webqa" in model_path:
         prompt_template = question
     else:
-        prompt_template = f"""Question: {question}\nAnswer the question with less than eight words based on the provided images."""
+        prompt_template = (
+            f"{question}\nAnswer the question using a single word or phrase."
+        )
 
     if "qwen-vl" in model_path.lower():
         output = qwen_chat(image_file, prompt_template, model, tokenizer)

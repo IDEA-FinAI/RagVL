@@ -12,12 +12,13 @@ from FlagEmbedding.visual.modeling import Visualized_BGE
 import ipdb
 from transformers import AutoModel, CLIPImageProcessor
 from transformers import AutoTokenizer
+from .model_series import load_clip
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 # ------------- build_index -------------
-def build_faiss(val_dataset, device, model, model_type="clip", preprocess=None):
+def build_faiss(val_dataset, device, model, clip_type="clip", preprocess=None):
     embeddings = []
     index_to_image_id = {}
     count = 0
@@ -33,10 +34,10 @@ def build_faiss(val_dataset, device, model, model_type="clip", preprocess=None):
             image_path = "../datasets/val_image/" + str(image_id) + ".png"
 
             with torch.no_grad():
-                if model_type == "clip":
+                if clip_type == "clip":
                     image = preprocess(Image.open(image_path)).to(device)
                     image_embeddings = model.encode_image(torch.unsqueeze(image, dim=0))
-                elif model_type == "bge":
+                elif "bge" in clip_type:
                     image_embeddings = model.encode(image=image_path)
                 else:
                     pixel_values = preprocess(
@@ -45,7 +46,7 @@ def build_faiss(val_dataset, device, model, model_type="clip", preprocess=None):
                     ).pixel_values
                     pixel_values = pixel_values.to(torch.bfloat16).to(device)
                     image_embeddings = model.encode_image(
-                        pixel_values, mode=model_type
+                        pixel_values, mode=clip_type
                     ).to(torch.float)
 
             combined_embedding = image_embeddings
@@ -70,8 +71,57 @@ def build_faiss(val_dataset, device, model, model_type="clip", preprocess=None):
     return index, index_to_image_id
 
 
+def build_faiss_mmqa(
+    val_dataset, metadata, device, model, clip_type="clip", preprocess=None
+):
+
+    embeddings = []
+    index_to_image_id = {}
+    count = 0
+    for datum in tqdm(val_dataset):
+        pos_img = datum["supporting_context"][0]
+        image_id = pos_img["doc_id"]
+        if image_id in index_to_image_id.values():
+            continue
+        image_path = "../finetune/tasks/MMQA_imgs/" + metadata[image_id]["path"]
+
+        with torch.no_grad():
+            if clip_type == "clip":
+                image = preprocess(Image.open(image_path)).to(device)
+                image_embeddings = model.encode_image(torch.unsqueeze(image, dim=0))
+            elif "bge" in clip_type:
+                image_embeddings = model.encode(image=image_path)
+            else:
+                pixel_values = preprocess(
+                    images=Image.open(image_path).convert("RGB"),
+                    return_tensors="pt",
+                ).pixel_values
+                pixel_values = pixel_values.to(torch.bfloat16).to(device)
+                image_embeddings = model.encode_image(pixel_values, mode=clip_type).to(
+                    torch.float
+                )
+
+        combined_embedding = image_embeddings
+        normalized_embedding = combined_embedding / combined_embedding.norm(
+            dim=-1, keepdim=True
+        )
+        embeddings.append(normalized_embedding.cpu().numpy())
+
+        index_to_image_id[count] = image_id
+        count += 1
+
+    embeddings = np.vstack(embeddings).astype("float32")
+
+    # cosine similarity
+    index = faiss.IndexFlatIP(embeddings.shape[1])
+
+    index.add(embeddings)
+
+    return index, index_to_image_id
+
+
 def build_faiss_flickr30k(
-    val_dataset, device, model, model_type="clip", preprocess=None
+    val_dataset, device, model, clip_type="clip", preprocess=None
 ):
     embeddings = []
     index_to_image_id = {}
@@ -80,10 +130,10 @@ def build_faiss_flickr30k(
     for img in tqdm(images[::5]):
         image_path = "../finetune/tasks/flickr30k/Images/" + img
         with torch.no_grad():
-            if model_type == "clip":
+            if clip_type == "clip":
                 image = preprocess(Image.open(image_path)).to(device)
                 image_embeddings = model.encode_image(torch.unsqueeze(image, dim=0))
-            elif model_type == "bge":
+            elif "bge" in clip_type:
                 image_embeddings = model.encode(image=image_path)
             else:
                 pixel_values = preprocess(
@@ -91,7 +141,7 @@ def build_faiss_flickr30k(
                     return_tensors="pt",
                 ).pixel_values
                 pixel_values = pixel_values.to(torch.bfloat16).to(device)
-                image_embeddings = model.encode_image(pixel_values, mode=model_type).to(
+                image_embeddings = model.encode_image(pixel_values, mode=clip_type).to(
                     torch.float
                 )
 
@@ -115,7 +165,7 @@ def build_faiss_flickr30k(
 
 
 def build_faiss_coco(
-    original_data, val_dataset, device, model, model_type="clip", preprocess=None
+    original_data, val_dataset, device, model, clip_type="clip", preprocess=None
 ):
     embeddings = []
     index_to_image_id = {}
@@ -128,10 +178,10 @@ def build_faiss_coco(
     for img in tqdm(image_ids[::5]):
         image_path = "../finetune/tasks/MSCOCO/val2014/" + image_files[img]
         with torch.no_grad():
-            if model_type == "clip":
+            if clip_type == "clip":
                 image = preprocess(Image.open(image_path)).to(device)
                 image_embeddings = model.encode_image(torch.unsqueeze(image, dim=0))
-            elif model_type == "bge":
+            elif "bge" in clip_type:
                 image_embeddings = model.encode(image=image_path)
             else:
                 pixel_values = preprocess(
@@ -139,7 +189,7 @@ def build_faiss_coco(
                     return_tensors="pt",
                 ).pixel_values
                 pixel_values = pixel_values.to(torch.bfloat16).to(device)
-                image_embeddings = model.encode_image(pixel_values, mode=model_type).to(
+                image_embeddings = model.encode_image(pixel_values, mode=clip_type).to(
                     torch.float
                 )
 
@@ -163,11 +213,11 @@ def build_faiss_coco(
 
 
 # ------------- text-to-image -------------
-def text_to_image(text, model, ind, topk=4, model_type="clip", tokenizer=None):
-    if model_type == "clip":
+def text_to_image(text, model, ind, topk=4, clip_type="clip", tokenizer=None):
+    if clip_type == "clip":
         text_tokens = clip.tokenize([text], truncate=True)
         text_features = model.encode_text(text_tokens.to(device))
-    elif "bge" in model_type:
+    elif "bge" in clip_type:
         text_features = model.encode(text=text)
     else:
         prefix = "summarize:"
@@ -209,7 +259,7 @@ def clip_retrieval(val_dataset, ind, index_to_image_id, model, args, tokenizer=N
             model,
             ind,
             args.topk,
-            model_type=args.model_type,
+            clip_type=args.clip_type,
             tokenizer=tokenizer,
         )
         for d, j in zip(D[0], I[0]):
@@ -222,6 +272,53 @@ def clip_retrieval(val_dataset, ind, index_to_image_id, model, args, tokenizer=N
         intersect = set(pos_source).intersection(set(retrieved_imgs))
         if len(intersect) == 0:
             hard_examples[i] = datum
+
+        total_sc_num += len(retrieved_imgs)
+        total_re_num += len(pos_source)
+        total_correct += len(list(intersect))
+
+    pre = total_correct / total_sc_num
+    recall = total_correct / total_re_num
+    f1 = 2 * pre * recall / (pre + recall)
+    print("Re pre:", pre)
+    print("Re recall:", recall)
+    print("Re F1:", f1)
+    print("Hard examples count:", len(hard_examples))
+    return hard_examples
+
+
+def clip_retrieval_mmqa(
+    val_dataset, ind, index_to_image_id, model, args, tokenizer=None
+):
+    total_correct = 0
+    total_sc_num = 0
+    total_re_num = 0
+    hard_examples = []
+    for datum in tqdm(val_dataset):
+        pos_source = []
+        retrieved_imgs = []
+        question = datum["question"]
+        pos_imgs = datum["supporting_context"]
+        for item in pos_imgs:
+            pos_source.append(item["doc_id"])
+
+        D, I = text_to_image(
+            question,
+            model,
+            ind,
+            args.topk,
+            clip_type=args.clip_type,
+            tokenizer=tokenizer,
+        )
+        for d, j in zip(D[0], I[0]):
+            img_id = index_to_image_id[str(j)]
+
+            # img_id = index_to_image_id[j]
+            retrieved_imgs.append(img_id)
+
+        intersect = set(pos_source).intersection(set(retrieved_imgs))
+        if len(intersect) == 0:
+            hard_examples.append(datum)
 
         total_sc_num += len(retrieved_imgs)
         total_re_num += len(pos_source)
@@ -252,7 +349,7 @@ def clip_retrieval_flickr30k(
         retrieved_imgs = []
 
         D, I = text_to_image(
-            cap, model, ind, args.topk, model_type=args.model_type, tokenizer=tokenizer
+            cap, model, ind, args.topk, clip_type=args.clip_type, tokenizer=tokenizer
         )
         for d, j in zip(D[0], I[0]):
             ## 从json文件中load index_to_image_id的话要用这一行
@@ -289,7 +386,7 @@ def clip_retrieval_coco(
         retrieved_imgs = []
 
         D, I = text_to_image(
-            cap, model, ind, args.topk, model_type=args.model_type, tokenizer=tokenizer
+            cap, model, ind, args.topk, clip_type=args.clip_type, tokenizer=tokenizer
         )
         for d, j in zip(D[0], I[0]):
             ## 从json文件中load index_to_image_id的话要用这一行
@@ -315,42 +412,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--topk", type=int, default=20)
     parser.add_argument("--datasets", type=str, default="WebQA")
-    parser.add_argument("--model_type", type=str, default="clip")
+    parser.add_argument("--clip_type", type=str, default="clip")
     args = parser.parse_args()
 
-    if args.model_type == "clip":
-        model, preprocess = clip.load("ViT-L/14@336px", device=device, jit=False)
-        tokenizer = None
-    elif args.model_type == "bge":
-        # model = Visualized_BGE(
-        #     model_name_bge="BAAI/bge-base-en-v1.5",
-        #     model_weight="FlagEmbedding/bge_models/Visualized_base_en_v1.5.pth",
-        # )
-        model = Visualized_BGE(
-            model_name_bge="BAAI/bge-m3",
-            model_weight="FlagEmbedding/bge_models/Visualized_m3.pth",
-        )
-
-        preprocess = None
-        tokenizer = None
-        model.eval()
-    elif "internvl" in args.model_type.lower():
-        model = (
-            AutoModel.from_pretrained(
-                "OpenGVLab/InternVL-14B-224px",
-                torch_dtype=torch.bfloat16,
-                low_cpu_mem_usage=True,
-                trust_remote_code=True,
-            )
-            .to(device)
-            .eval()
-        )
-
-        preprocess = CLIPImageProcessor.from_pretrained("OpenGVLab/InternVL-14B-224px")
-        tokenizer = AutoTokenizer.from_pretrained(
-            "OpenGVLab/InternVL-14B-224px", use_fast=False, add_eos_token=True
-        )
-        tokenizer.pad_token_id = 0  # set pad_token_id to 0
+    model, preprocess, tokenizer = load_clip(args)
 
     if args.datasets == "WebQA":
         with open("../datasets/WebQA_test_image.json", "r") as f:
@@ -359,7 +424,23 @@ if __name__ == "__main__":
         #     val_dataset,
         #     device,
         #     model,
-        #     model_type=args.model_type,
+        #     clip_type=args.clip_type,
+        #     preprocess=preprocess,
+        # )
+
+    elif args.datasets == "MMQA":
+
+        with open("../datasets/MMQA_test_image.json", "r") as f:
+            val_dataset = json.load(f)
+        with open("../datasets/MMQA_ImageQ_metadata.json", "r") as f:
+            metadata = json.load(f)
+
+        # index, index_to_image_id = build_faiss_mmqa(
+        #     val_dataset,
+        #     metadata,
+        #     device,
+        #     model,
+        #     clip_type=args.clip_type,
         #     preprocess=preprocess,
         # )
 
@@ -369,7 +450,7 @@ if __name__ == "__main__":
         #     val_dataset,
         #     device,
         #     model,
-        #     model_type=args.model_type,
+        #     clip_type=args.clip_type,
         #     preprocess=preprocess,
         # )
 
@@ -394,7 +475,7 @@ if __name__ == "__main__":
         #     val_dataset,
         #     device,
         #     model,
-        #     model_type=args.model_type,
+        #     clip_type=args.clip_type,
         #     preprocess=preprocess,
         # )
 
@@ -403,17 +484,15 @@ if __name__ == "__main__":
     #     "../datasets/faiss_index/"
     #     + args.datasets
     #     + "_test_image_"
-    #     + args.model_type
+    #     + args.clip_type
     #     + ".index",
     # )
-    # with open("../datasets/coco_test_image_index_to_id.json", "w") as f:
-    #     json.dump(index_to_image_id, f, indent=4)
 
     index = faiss.read_index(
         "../datasets/faiss_index/"
         + args.datasets
         + "_test_image_"
-        + args.model_type
+        + args.clip_type
         + ".index"
     )
     with open(
@@ -424,6 +503,10 @@ if __name__ == "__main__":
     with torch.no_grad():
         if args.datasets == "WebQA":
             hard_examples = clip_retrieval(
+                val_dataset, index, index_to_image_id, model, args, tokenizer
+            )
+        elif args.datasets == "MMQA":
+            clip_retrieval_mmqa(
                 val_dataset, index, index_to_image_id, model, args, tokenizer
             )
         elif args.datasets == "flickr30k":

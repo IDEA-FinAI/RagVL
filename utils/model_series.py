@@ -5,12 +5,13 @@ from transformers import (
     AutoModel,
     CLIPImageProcessor,
 )
-from InternVL.internvl_chat.internvl.model.internvl_chat import InternVLChatModel
+
 from llava.mm_utils import get_model_name_from_path
-import torch
-from InternVL.internvl_chat.internvl.conversation import get_conv_template
-from .FlagEmbedding.visual.modeling import Visualized_BGE
+from internvl_chat.internvl.model.internvl_chat import InternVLChatModel
+from internvl_chat.internvl.conversation import get_conv_template
+from FlagEmbedding.visual.modeling import Visualized_BGE
 import clip
+import torch
 
 BASE_SERIES = {
     "llava": "liuhaotian/llava-v1.5-13b",
@@ -25,14 +26,16 @@ RERANKER_SERIES = {
         "llava": "checkpoints/web/llava-v1.5-13b-2epoch-16batch_size-webqa-reranker-caption-lora",
         "owl": "checkpoints/web/mplug-owl2-2epoch-8batch_size-webqa-reranker-caption-lora",
         "qwenvl": "checkpoints/web/qwen-vl-chat-2epoch-4batch_size-webqa-reranker-caption-lora-new",
-        "internvl2-1b": "checkpoints/web/internvl2_1b_1epoch-16batch_size-webqa-reranker-caption-lora",
-        "internvl2-2b": "checkpoints/web/internvl2_2b_1epoch-16batch_size-webqa-reranker-caption-lora",
+        "internvl2-1b": "checkpoints/web/internvl2_1b_1epoch-16batch_size-webqa-reranker-caption-lora-merge",
+        "internvl2-2b": "checkpoints/web/internvl2_2b_1epoch-16batch_size-webqa-reranker-caption-lora-merge",
         "blend": "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-blend-caption-lora",
     },
     "mmqa": {
         "llava": "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-16batch_size-mmqa-reranker-caption-lora",
         "blend": "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-blend-caption-lora",
-        "internvl2-2b": "checkpoints/multimodalqa/internvl2_2b_1epoch-16batch_size-mmqa-reranker-caption-lora",
+        "internvl2-1b": "checkpoints/multimodalqa/internvl2_1b_1epoch-16batch_size-mmqa-reranker-caption-lora-merge",
+        "internvl2-2b": "checkpoints/multimodalqa/internvl2_2b_1epoch-16batch_size-mmqa-reranker-caption-lora-merge",
+        "qwenvl": "checkpoints/multimodalqa/qwen-vl-chat-1epoch-4batch_size-mmqa-reranker-caption-lora",
     },
     "flickr30k": {
         "llava": "checkpoints/flickr/llava-v1.5-13b-1epoch-16batch_size-flickr30k-one-reranker-caption-lora",
@@ -55,11 +58,11 @@ GENERATOR_SERIES = {
         "llava": "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-noise-injected-lora",
         "owl": "checkpoints/web/mplug-owl2-2epoch-8batch_size-webqa-noise-injected-lora",
         "qwenvl": "checkpoints/web/qwen-vl-chat-2epoch-2batch_size-webqa-noise-injected-lora-new",
-        "internvl2-2b": "checkpoints/web/internvl2_2b_1epoch-8batch_size-webqa-noise-injected-lora",
+        "internvl2-2b": "checkpoints/web/internvl2_2b_1epoch-8batch_size-webqa-noise-injected-lora-merge",
     },
     "mmqa": {
-        "llava": "checkpoints/multimodalqa/llava-v1.5-13b-1epoch-8batch_size-mmqa-noise-injected-lora",
-        "internvl2-2b": "checkpoints/multimodalqa/internvl2_2b_1epoch-16batch_size-mmqa-noise-injected-lora",
+        "llava": "checkpoints/multimodalqa/llava-v1.5-13b-3epoch-8batch_size-mmqa-noise-injected-lora",
+        "internvl2-2b": "checkpoints/multimodalqa/internvl2_2b_1epoch-16batch_size-mmqa-noise-injected-lora-merge",
         "qwenvl": "checkpoints/qwen-vl-chat-1epoch-2batch_size-mmqa-noise-injected-lora",
     },
 }
@@ -90,16 +93,13 @@ def load_clip(args):
         tokenizer = None
         model.eval()
     elif "internvl" in args.clip_type.lower():
-        model = (
-            AutoModel.from_pretrained(
-                "OpenGVLab/InternVL-14B-224px",
-                torch_dtype=torch.bfloat16,
-                low_cpu_mem_usage=True,
-                trust_remote_code=True,
-            )
-            .to("cuda")
-            .eval()
-        )
+        model = AutoModel.from_pretrained(
+            "OpenGVLab/InternVL-14B-224px",
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+            trust_remote_code=True,
+            device_map=0,
+        ).eval()
 
         preprocess = CLIPImageProcessor.from_pretrained("OpenGVLab/InternVL-14B-224px")
         tokenizer = AutoTokenizer.from_pretrained(
@@ -110,7 +110,7 @@ def load_clip(args):
     return model, preprocess, tokenizer
 
 
-def load_reranker(args, dataset):
+def load_reranker(args, dataset, device_map="auto"):
     if args.series not in BASE_SERIES:
         raise ValueError("Invalid model series specified.")
 
@@ -122,10 +122,10 @@ def load_reranker(args, dataset):
     print("---------------------------------------")
     print(f"Loading reranker {reranker_model_path}")
     print("---------------------------------------")
-    return load_models(args, reranker_model_path), reranker_model_path
+    return load_models(args, reranker_model_path, device_map), reranker_model_path
 
 
-def load_generator(args, dataset):
+def load_generator(args, dataset, device_map="auto"):
     if args.series not in BASE_SERIES:
         raise ValueError("Invalid model series specified.")
 
@@ -137,10 +137,10 @@ def load_generator(args, dataset):
     print("---------------------------------------")
     print(f"Loading generator {generator_model_path}")
     print("---------------------------------------")
-    return load_models(args, generator_model_path), generator_model_path
+    return load_models(args, generator_model_path, device_map), generator_model_path
 
 
-def load_models(args, model_path):
+def load_models(args, model_path, device_map="auto"):
     model_series = args.series
 
     if "llava" in model_series:
@@ -153,7 +153,7 @@ def load_models(args, model_path):
             # use_flash_attn=True,
         )
 
-    elif "mplug-owl2" in model_series:
+    elif "owl" in model_series:
         from mplug_owl2.model.builder import load_pretrained_model
 
         tokenizer, model, image_processor, _ = load_pretrained_model(
@@ -172,12 +172,12 @@ def load_models(args, model_path):
         if "lora" in model_path:
             model = AutoPeftModelForCausalLM.from_pretrained(
                 model_path,  # path to the output directory
-                device_map="auto",
+                device_map=device_map,
                 trust_remote_code=True,
             ).eval()
         else:
             model = AutoModelForCausalLM.from_pretrained(
-                "Qwen/Qwen-VL-Chat", device_map="auto", trust_remote_code=True
+                "Qwen/Qwen-VL-Chat", device_map=device_map, trust_remote_code=True
             ).eval()
 
         image_processor = None
@@ -194,7 +194,7 @@ def load_models(args, model_path):
                 low_cpu_mem_usage=True,
                 torch_dtype=torch.bfloat16,
                 use_flash_attn=True,
-                device_map=0,
+                device_map=device_map,
             ).eval()
 
             if model.config.use_backbone_lora:
@@ -214,7 +214,7 @@ def load_models(args, model_path):
                 low_cpu_mem_usage=True,
                 use_flash_attn=True,
                 trust_remote_code=True,
-                device_map=0,
+                device_map=device_map,
             ).eval()
 
         image_processor = None

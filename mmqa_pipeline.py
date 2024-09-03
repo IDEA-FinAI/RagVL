@@ -1,13 +1,12 @@
 import faiss
 import numpy as np
-import clip
 import torch
 import ipdb
 import json
 from tqdm import tqdm
 from utils.metrics import mmqa_metrics_approx
 from utils.indexing_faiss import text_to_image
-from utils.model_series import load_generator, load_reranker
+from utils.model_series import load_generator, load_reranker, load_clip
 from utils.utils import infer, cal_relevance
 import argparse
 
@@ -20,11 +19,13 @@ def clip_rerank_generate(
     reranker_model_path,
     generator_path,
     reranker_model,
-    clip_model,
     tokenizer,
     image_processor,
     generator_model,
     save_path,
+    clip_model,
+    clip_tokenizer,
+    clip_type,
     filter,
     mode,
     rerank_off,
@@ -34,6 +35,13 @@ def clip_rerank_generate(
     retrieval_correct = 0
     retrieval_num = 0
     retrieval_pos_num = 0
+
+    ### For Retrieval ###
+    retrieval_correct_5 = 0
+    retrieval_num_5 = 0
+    retrieval_correct_10 = 0
+    retrieval_num_10 = 0
+
     acc_scores = {"ALL": []}
 
     hard_examples = {}
@@ -55,7 +63,10 @@ def clip_rerank_generate(
 
             for item in pos_imgs:
                 pos_source.append(item["doc_id"])
-            D, I = text_to_image(question, clip_model, ind, topk)
+
+            D, I = text_to_image(
+                question, clip_model, ind, topk, clip_type, clip_tokenizer
+            )
             for d, j in zip(D[0], I[0]):
                 img_id = index_to_image_id[str(j)]
                 retrieved_imgs.append(img_id)
@@ -97,6 +108,28 @@ def clip_rerank_generate(
                     ]
                 )
 
+                filtered_imgs = [
+                    key for key, val in top_sorted_imgs.items() if val >= filter
+                ]
+
+                ### For Retrieval ###
+                top_sorted_imgs_5 = dict(
+                    sorted(rerank_imgs.items(), key=lambda item: item[1], reverse=True)[
+                        :5
+                    ]
+                )
+                top_sorted_imgs_10 = dict(
+                    sorted(rerank_imgs.items(), key=lambda item: item[1], reverse=True)[
+                        :10
+                    ]
+                )
+                filtered_imgs_5 = [
+                    key for key, val in top_sorted_imgs_5.items() if val >= filter
+                ]
+                filtered_imgs_10 = [
+                    key for key, val in top_sorted_imgs_10.items() if val >= filter
+                ]
+
                 intersect = set(pos_source).intersection(set(top_sorted_imgs.keys()))
                 remaining = set(top_sorted_imgs.keys()).difference(intersect)
 
@@ -106,9 +139,6 @@ def clip_rerank_generate(
                 for key in remaining:
                     probabilities["false"].append(top_sorted_imgs[key])
 
-                filtered_imgs = [
-                    key for key, val in top_sorted_imgs.items() if val >= filter
-                ]
             else:
                 top_sorted_imgs = retrieved_imgs
                 filtered_imgs = retrieved_imgs
@@ -118,45 +148,57 @@ def clip_rerank_generate(
             if len(intersect) == 0:
                 hard_examples[qid] = datum
 
-            IMAGE_PATH = ""
-            for i in range(len(filtered_imgs)):
-                IMAGE_PATH += (
-                    "finetune/tasks/MMQA_imgs/" + metadata[filtered_imgs[i]]["path"]
-                )
-
-                if i != len(filtered_imgs) - 1:
-                    IMAGE_PATH += ","
-
-            output = infer(
-                generator_path,
-                IMAGE_PATH,
-                question,
-                generator_model,
-                tokenizer,
-                image_processor,
-                from_array=False,
-            )
-
-            if "how many" in question.lower():
-                qcate = "number"
-            else:
-                qcate = "normal"
-            accuracy = mmqa_metrics_approx(output, answer, qcate)
-            acc_scores["ALL"].append(accuracy)
-
             retrieval_num += len(filtered_imgs)
             retrieval_pos_num += len(pos_source)
             retrieval_correct += len(set(pos_source).intersection(set(filtered_imgs)))
 
-            output_json = {
-                "question": question,
-                "generator_answer": output,
-                "answer": answer,
-                "gt_images": pos_source,
-                "retrieved_images": top_sorted_imgs,
-            }
-            new_data = json.dumps({qid: output_json})[1:-1]
-            f.write(f"    {new_data},\n")  # 写入缩进的键值对
+            ### For Retrieval ###
+            retrieval_num_5 += len(filtered_imgs_5)
+            retrieval_correct_5 += len(
+                set(pos_source).intersection(set(filtered_imgs_5))
+            )
+
+            retrieval_num_10 += len(filtered_imgs_10)
+            retrieval_correct_10 += len(
+                set(pos_source).intersection(set(filtered_imgs_10))
+            )
+
+            if generator_model != None:
+                IMAGE_PATH = ""
+                for i in range(len(filtered_imgs)):
+                    IMAGE_PATH += (
+                        "finetune/tasks/MMQA_imgs/" + metadata[filtered_imgs[i]]["path"]
+                    )
+
+                    if i != len(filtered_imgs) - 1:
+                        IMAGE_PATH += ","
+
+                output = infer(
+                    generator_path,
+                    IMAGE_PATH,
+                    question,
+                    generator_model,
+                    tokenizer,
+                    image_processor,
+                    from_array=False,
+                )
+
+                if "how many" in question.lower():
+                    qcate = "number"
+                else:
+                    qcate = "normal"
+                accuracy = mmqa_metrics_approx(output, answer, qcate)
+                acc_scores["ALL"].append(accuracy)
+
+                output_json = {
+                    "question": question,
+                    "generator_answer": output,
+                    "answer": answer,
+                    "gt_images": pos_source,
+                    "retrieved_images": top_sorted_imgs,
+                }
+                new_data = json.dumps({qid: output_json})[1:-1]
+                f.write(f"    {new_data},\n")  # 写入缩进的键值对
 
         f.write("}")
 
@@ -174,17 +216,35 @@ def clip_rerank_generate(
     recall = retrieval_correct / retrieval_pos_num
     f1 = 2 * pre * recall / (pre + recall)
 
-    print("Generation ACC:", np.mean(acc_scores["ALL"]))
-
     print("Retrieval pre:", pre)
     print("Retrieval recall:", recall)
     print("Retrieval F1:", f1)
+
+    pre_5 = retrieval_correct_5 / retrieval_num_5
+    recall_5 = retrieval_correct_5 / retrieval_pos_num
+    f1_5 = 2 * pre_5 * recall_5 / (pre_5 + recall_5)
+
+    print("Retrieval pre_5:", pre_5)
+    print("Retrieval recall_5:", recall_5)
+    print("Retrieval F1_5:", f1_5)
+
+    pre_10 = retrieval_correct_10 / retrieval_num_10
+    recall_10 = retrieval_correct_10 / retrieval_pos_num
+    f1_10 = 2 * pre_10 * recall_10 / (pre_10 + recall_10)
+
+    print("Retrieval pre_10:", pre_10)
+    print("Retrieval recall_10:", recall_10)
+    print("Retrieval F1_10:", f1_10)
+
+    print("Generation ACC:", np.mean(acc_scores["ALL"]))
+
     print("Hard examples count:", len(hard_examples))
     return hard_examples
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--clip_type", type=str, default="clip")
     parser.add_argument("--reranker_model", type=str, default="caption_lora")
     parser.add_argument("--generator_model", type=str, default="noise_injected_lora")
     parser.add_argument("--series", type=str, default="llava")
@@ -196,26 +256,39 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    clip_model, preprocess = clip.load("ViT-L/14@336px", device="cuda", jit=False)
+    clip_model, _, clip_tokenizer = load_clip(args)
 
-    (tokenizer, reranker_model, image_processor), reranker_model_path = load_reranker(
-        args, "mmqa"
-    )
+    if not args.rerank_off:
+        (tokenizer, reranker_model, image_processor), reranker_model_path = (
+            load_reranker(args, "mmqa")
+        )
+    else:
+        reranker_model = None
+        reranker_model_path = "off/rerank_off"
 
     if args.generator_model == "blend_lora":
         generator_path = reranker_model_path
         generator_model = reranker_model
+    elif args.generator_model == "None":
+        generator_model = None
+        generator_path = None
     else:
-        (_, generator_model, _), generator_path = load_generator(args, "mmqa")
+        (tokenizer, generator_model, image_processor), generator_path = load_generator(
+            args, "mmqa"
+        )
 
-    with open("datasets/MMQA_" + args.datasets + "_ImageQ.json", "r") as f:
+    with open("datasets/MMQA_" + args.datasets + "_image.json", "r") as f:
         val_dataset = json.load(f)
 
-    with open("datasets/MMQA_" + args.datasets + "_ImageQ_index_to_id.json", "r") as f:
+    with open("datasets/MMQA_" + args.datasets + "_image_index_to_id.json", "r") as f:
         index_to_image_id = json.load(f)
 
     index = faiss.read_index(
-        "datasets/faiss_index/MMQA_" + args.datasets + "_ImageQ.index"
+        "datasets/faiss_index/MMQA_"
+        + args.datasets
+        + "_image_"
+        + args.clip_type
+        + ".index"
     )
 
     save_path = (
@@ -252,11 +325,13 @@ if __name__ == "__main__":
             reranker_model_path,
             generator_path,
             reranker_model,
-            clip_model,
             tokenizer,
             image_processor,
             generator_model,
             save_path,
+            clip_model,
+            clip_tokenizer,
+            clip_type=args.clip_type,
             filter=args.filter,
             mode=args.datasets,
             rerank_off=args.rerank_off,

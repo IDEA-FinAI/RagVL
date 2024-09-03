@@ -190,7 +190,7 @@ def clip_rerank_generate(
             retrieval_pos_num += len(pos_source)
             retrieval_correct += len(set(pos_source).intersection(set(filtered_imgs)))
 
-            ## For Retrieval ###
+            ### For Retrieval ###
             retrieval_num_5 += len(filtered_imgs_5)
             retrieval_correct_5 += len(
                 set(pos_source).intersection(set(filtered_imgs_5))
@@ -302,9 +302,14 @@ if __name__ == "__main__":
 
     clip_model, _, clip_tokenizer = load_clip(args)
 
-    (tokenizer, reranker_model, image_processor), reranker_model_path = load_reranker(
-        args, "webqa"
-    )
+    if not args.rerank_off:
+        (tokenizer, reranker_model, image_processor), reranker_model_path = (
+            load_reranker(args, "webqa")
+        )
+    else:
+        reranker_model = None
+        reranker_model_path = "off/rerank_off"
+
     if args.generator_model == "blend_lora":
         generator_model = reranker_model
         generator_path = reranker_model_path
@@ -312,7 +317,9 @@ if __name__ == "__main__":
         generator_model = None
         generator_path = None
     else:
-        (_, generator_model, _), generator_path = load_generator(args, "webqa")
+        (tokenizer, generator_model, image_processor), generator_path = load_generator(
+            args, "webqa"
+        )
 
     val_dataset, index, index_to_image_id = load_datasets(args)
 

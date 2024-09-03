@@ -1,11 +1,13 @@
 import torch
-from InternVL.internvl_chat.internvl.model.internvl_chat import InternVLChatModel
+from internvl_chat.internvl.model.internvl_chat import InternVLChatModel
 from transformers import AutoTokenizer
 
 input_path = (
-    "checkpoints/coco/internvl2_2b_1epoch-16batch_size-MSCOCO-one-reranker-caption-lora"
+    "checkpoints/web/internvl2_2b_1epoch-16batch_size-webqa-reranker-caption-lora"
 )
-output_path = "checkpoints/coco/internvl2_2b_1epoch-16batch_size-MSCOCO-one-reranker-caption-lora-merge"
+output_path = (
+    "checkpoints/web/internvl2_2b_1epoch-16batch_size-webqa-reranker-caption-lora-merge"
+)
 
 print("Loading model...")
 model = InternVLChatModel.from_pretrained(

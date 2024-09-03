@@ -1,8 +1,8 @@
 set -x
 
 GPUS=${GPUS:-4}
-BATCH_SIZE=${BATCH_SIZE:-8}
-PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE:-2}
+BATCH_SIZE=${BATCH_SIZE:-16}
+PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE:-4}
 GRADIENT_ACC=$((BATCH_SIZE / PER_DEVICE_BATCH_SIZE / GPUS))
 
 
@@ -10,9 +10,10 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 export MASTER_PORT=34229
 export TF_CPP_MIN_LOG_LEVEL=3
 export LAUNCHER=pytorch
-export CUDA_VISIBLE_DEVICES=3,4,5,6
+export CUDA_VISIBLE_DEVICES=1,2,3,4
 
-OUTPUT_DIR='/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/checkpoints/internvl2_2b_2epoch-8batch_size-webqa-noise-injected-lora'
+OUTPUT_DIR='/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/checkpoints/internvl2_2b_1epoch-16batch_size-mmqa-reranker-caption-lora'
+# OUTPUT_DIR='/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/checkpoints/internvl2_2b_1epoch-16batch_size-mmqa-noise-injected-lora'
 
 if [ ! -d "$OUTPUT_DIR" ]; then
   mkdir -p "$OUTPUT_DIR"
@@ -33,7 +34,7 @@ torchrun \
   --model_name_or_path "OpenGVLab/InternVL2-2B" \
   --conv_style "internlm2-chat" \
   --output_dir ${OUTPUT_DIR} \
-  --meta_path "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/InternVL/internvl_chat/shell/data/internvl_2_finetune_webqa_qa.json" \
+  --meta_path "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/InternVL/internvl_chat/shell/data/internvl_2_finetune_mmqa_rerank.json" \
   --overwrite_output_dir True \
   --force_image_size 448 \
   --max_dynamic_patch 6 \

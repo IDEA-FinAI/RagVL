@@ -56,7 +56,12 @@ class LoraArguments:
     lora_alpha: int = 16
     lora_dropout: float = 0.05
     lora_target_modules: List[str] = field(
-        default_factory=lambda: ["c_attn", "attn.c_proj", "w1", "w2"] ##["in_proj","out_proj","c_fc"]
+        default_factory=lambda: [
+            "c_attn",
+            "attn.c_proj",
+            "w1",
+            "w2",
+        ]  ##["in_proj","out_proj","c_fc"]
     )
     lora_weight_path: str = ""
     lora_bias: str = "none"
@@ -98,14 +103,18 @@ def get_peft_state_maybe_zero_3(named_params, bias):
     to_return = {k: maybe_zero_3(v) for k, v in to_return.items()}
     return to_return
 
+
 local_rank = None
+
 
 def rank0_print(*args):
     if local_rank == 0:
         print(*args)
 
 
-def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str, bias="none"):
+def safe_save_model_for_hf_trainer(
+    trainer: transformers.Trainer, output_dir: str, bias="none"
+):
     """Collects the state dict and dump to disk."""
     # check if zero3 mode enabled
     if deepspeed.is_deepspeed_zero3_enabled():
@@ -125,16 +134,16 @@ def preprocess(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
     max_len: int,
-    system_message: str = "You are a helpful assistant."
+    system_message: str = "You are a helpful assistant.",
 ) -> Dict:
     roles = {"user": "<|im_start|>user", "assistant": "<|im_start|>assistant"}
 
     im_start = tokenizer.im_start_id
     im_end = tokenizer.im_end_id
-    nl_tokens = tokenizer('\n').input_ids
-    _system = tokenizer('system').input_ids + nl_tokens
-    _user = tokenizer('user').input_ids + nl_tokens
-    _assistant = tokenizer('assistant').input_ids + nl_tokens
+    nl_tokens = tokenizer("\n").input_ids
+    _system = tokenizer("system").input_ids + nl_tokens
+    _user = tokenizer("user").input_ids + nl_tokens
+    _assistant = tokenizer("assistant").input_ids + nl_tokens
 
     # Apply prompt templates
     input_ids, targets = [], []
@@ -143,20 +152,43 @@ def preprocess(
             source = source[1:]
 
         input_id, target = [], []
-        system = [im_start] + _system + tokenizer(system_message).input_ids + [im_end] + nl_tokens
+        system = (
+            [im_start]
+            + _system
+            + tokenizer(system_message).input_ids
+            + [im_end]
+            + nl_tokens
+        )
         input_id += system
-        target += [im_start] + [IGNORE_TOKEN_ID] * (len(system)-3) + [im_end] + nl_tokens
+        target += (
+            [im_start] + [IGNORE_TOKEN_ID] * (len(system) - 3) + [im_end] + nl_tokens
+        )
         assert len(input_id) == len(target)
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
-            _input_id = tokenizer(role).input_ids + nl_tokens + \
-                tokenizer(sentence["value"]).input_ids + [im_end] + nl_tokens
+            _input_id = (
+                tokenizer(role).input_ids
+                + nl_tokens
+                + tokenizer(sentence["value"]).input_ids
+                + [im_end]
+                + nl_tokens
+            )
             input_id += _input_id
-            if role == '<|im_start|>user':
-                _target = [im_start] + [IGNORE_TOKEN_ID] * (len(_input_id)-3) + [im_end] + nl_tokens
-            elif role == '<|im_start|>assistant':
-                _target = [im_start] + [IGNORE_TOKEN_ID] * len(tokenizer(role).input_ids) + \
-                    _input_id[len(tokenizer(role).input_ids)+1:-2] + [im_end] + nl_tokens
+            if role == "<|im_start|>user":
+                _target = (
+                    [im_start]
+                    + [IGNORE_TOKEN_ID] * (len(_input_id) - 3)
+                    + [im_end]
+                    + nl_tokens
+                )
+            elif role == "<|im_start|>assistant":
+                _target = (
+                    [im_start]
+                    + [IGNORE_TOKEN_ID] * len(tokenizer(role).input_ids)
+                    + _input_id[len(tokenizer(role).input_ids) + 1 : -2]
+                    + [im_end]
+                    + nl_tokens
+                )
             else:
                 raise NotImplementedError
             target += _target
@@ -178,7 +210,9 @@ def preprocess(
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, max_len: int):
+    def __init__(
+        self, raw_data, tokenizer: transformers.PreTrainedTokenizer, max_len: int
+    ):
         super(SupervisedDataset, self).__init__()
 
         rank0_print("Formatting inputs...")
@@ -203,7 +237,9 @@ class SupervisedDataset(Dataset):
 class LazySupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, max_len: int):
+    def __init__(
+        self, raw_data, tokenizer: transformers.PreTrainedTokenizer, max_len: int
+    ):
         super(LazySupervisedDataset, self).__init__()
         self.tokenizer = tokenizer
         self.max_len = max_len
@@ -220,7 +256,9 @@ class LazySupervisedDataset(Dataset):
         if i in self.cached_data_dict:
             return self.cached_data_dict[i]
 
-        ret = preprocess([self.raw_data[i]["conversations"]], self.tokenizer, self.max_len)
+        ret = preprocess(
+            [self.raw_data[i]["conversations"]], self.tokenizer, self.max_len
+        )
         ret = dict(
             input_ids=ret["input_ids"][0],
             labels=ret["labels"][0],
@@ -232,7 +270,9 @@ class LazySupervisedDataset(Dataset):
 
 
 def make_supervised_data_module(
-    tokenizer: transformers.PreTrainedTokenizer, data_args, max_len,
+    tokenizer: transformers.PreTrainedTokenizer,
+    data_args,
+    max_len,
 ) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     dataset_cls = (
@@ -254,7 +294,7 @@ def make_supervised_data_module(
 
 def train():
     global local_rank
-    
+
     parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
     )
@@ -265,7 +305,9 @@ def train():
         lora_args,
     ) = parser.parse_args_into_dataclasses()
 
-    if getattr(training_args, 'deepspeed', None) and getattr(lora_args, 'q_lora', False):
+    if getattr(training_args, "deepspeed", None) and getattr(
+        lora_args, "q_lora", False
+    ):
         training_args.distributed_state.distributed_type = DistributedType.DEEPSPEED
 
     compute_dtype = (
@@ -282,9 +324,7 @@ def train():
     if lora_args.q_lora:
         device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else None
         if len(training_args.fsdp) > 0 or deepspeed.is_deepspeed_zero3_enabled():
-            logging.warning(
-                "FSDP or ZeRO3 are not incompatible with QLoRA."
-            )
+            logging.warning("FSDP or ZeRO3 are not incompatible with QLoRA.")
 
     # Set RoPE scaling factor
     config = transformers.AutoConfig.from_pretrained(
@@ -301,17 +341,21 @@ def train():
         cache_dir=training_args.cache_dir,
         device_map=device_map,
         trust_remote_code=True,
-        quantization_config=GPTQConfig(
-            bits=4, disable_exllama=True
-        )
-        if training_args.use_lora and lora_args.q_lora
-        else None,
+        quantization_config=(
+            GPTQConfig(bits=4, disable_exllama=True)
+            if training_args.use_lora and lora_args.q_lora
+            else None
+        ),
     )
 
     if not training_args.use_lora:
-        if training_args.fix_vit and hasattr(model,'transformer') and hasattr(model.transformer,'visual'):
+        if (
+            training_args.fix_vit
+            and hasattr(model, "transformer")
+            and hasattr(model.transformer, "visual")
+        ):
             model.transformer.visual.requires_grad_(False)
-            if hasattr(model.transformer.visual,'attn_pool'):
+            if hasattr(model.transformer.visual, "attn_pool"):
                 model.transformer.visual.attn_pool.requires_grad_(True)
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
@@ -335,7 +379,7 @@ def train():
             lora_dropout=lora_args.lora_dropout,
             bias=lora_args.lora_bias,
             task_type="CAUSAL_LM",
-            modules_to_save=modules_to_save  # This argument serves for adding new tokens.
+            modules_to_save=modules_to_save,  # This argument serves for adding new tokens.
         )
         if lora_args.q_lora:
             model = prepare_model_for_kbit_training(
@@ -360,7 +404,9 @@ def train():
     trainer.train()
     trainer.save_state()
 
-    safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir, bias=lora_args.lora_bias)
+    safe_save_model_for_hf_trainer(
+        trainer=trainer, output_dir=training_args.output_dir, bias=lora_args.lora_bias
+    )
 
 
 if __name__ == "__main__":
