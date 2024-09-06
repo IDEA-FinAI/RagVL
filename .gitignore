@@ -26,3 +26,4 @@ visualize.py
 attention_visualization
 *.pth
 logs
+test_chatgpt.py

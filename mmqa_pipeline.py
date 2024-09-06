@@ -153,15 +153,16 @@ def clip_rerank_generate(
             retrieval_correct += len(set(pos_source).intersection(set(filtered_imgs)))
 
             ### For Retrieval ###
-            retrieval_num_5 += len(filtered_imgs_5)
-            retrieval_correct_5 += len(
-                set(pos_source).intersection(set(filtered_imgs_5))
-            )
+            if not rerank_off:
+                retrieval_num_5 += len(filtered_imgs_5)
+                retrieval_correct_5 += len(
+                    set(pos_source).intersection(set(filtered_imgs_5))
+                )
 
-            retrieval_num_10 += len(filtered_imgs_10)
-            retrieval_correct_10 += len(
-                set(pos_source).intersection(set(filtered_imgs_10))
-            )
+                retrieval_num_10 += len(filtered_imgs_10)
+                retrieval_correct_10 += len(
+                    set(pos_source).intersection(set(filtered_imgs_10))
+                )
 
             if generator_model != None:
                 IMAGE_PATH = ""
@@ -202,16 +203,6 @@ def clip_rerank_generate(
 
         f.write("}")
 
-    with open(
-        "logs/mmqa/"
-        + reranker_model_path.split("/")[1]
-        + "_mmqa_distribution_prob_"
-        + mode
-        + ".json",
-        "w",
-    ) as json_file:
-        json.dump(probabilities, json_file, indent=4)
-
     pre = retrieval_correct / retrieval_num
     recall = retrieval_correct / retrieval_pos_num
     f1 = 2 * pre * recall / (pre + recall)
@@ -220,21 +211,33 @@ def clip_rerank_generate(
     print("Retrieval recall:", recall)
     print("Retrieval F1:", f1)
 
-    pre_5 = retrieval_correct_5 / retrieval_num_5
-    recall_5 = retrieval_correct_5 / retrieval_pos_num
-    f1_5 = 2 * pre_5 * recall_5 / (pre_5 + recall_5)
+    if not rerank_off:
 
-    print("Retrieval pre_5:", pre_5)
-    print("Retrieval recall_5:", recall_5)
-    print("Retrieval F1_5:", f1_5)
+        with open(
+            "logs/mmqa/"
+            + reranker_model_path.split("/")[-1]
+            + "_mmqa_distribution_prob_"
+            + mode
+            + ".json",
+            "w",
+        ) as json_file:
+            json.dump(probabilities, json_file, indent=4)
 
-    pre_10 = retrieval_correct_10 / retrieval_num_10
-    recall_10 = retrieval_correct_10 / retrieval_pos_num
-    f1_10 = 2 * pre_10 * recall_10 / (pre_10 + recall_10)
+        pre_5 = retrieval_correct_5 / retrieval_num_5
+        recall_5 = retrieval_correct_5 / retrieval_pos_num
+        f1_5 = 2 * pre_5 * recall_5 / (pre_5 + recall_5)
 
-    print("Retrieval pre_10:", pre_10)
-    print("Retrieval recall_10:", recall_10)
-    print("Retrieval F1_10:", f1_10)
+        print("Retrieval pre_5:", pre_5)
+        print("Retrieval recall_5:", recall_5)
+        print("Retrieval F1_5:", f1_5)
+
+        pre_10 = retrieval_correct_10 / retrieval_num_10
+        recall_10 = retrieval_correct_10 / retrieval_pos_num
+        f1_10 = 2 * pre_10 * recall_10 / (pre_10 + recall_10)
+
+        print("Retrieval pre_10:", pre_10)
+        print("Retrieval recall_10:", recall_10)
+        print("Retrieval F1_10:", f1_10)
 
     print("Generation ACC:", np.mean(acc_scores["ALL"]))
 
@@ -309,6 +312,7 @@ if __name__ == "__main__":
                             if args.clip_topk != 20
                             else ""
                         ),
+                        args.datasets,
                     ]
                     if attr != ""
                 ]

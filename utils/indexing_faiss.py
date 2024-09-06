@@ -12,7 +12,7 @@ from FlagEmbedding.visual.modeling import Visualized_BGE
 import ipdb
 from transformers import AutoModel, CLIPImageProcessor
 from transformers import AutoTokenizer
-from .model_series import load_clip
+from model_series import load_clip
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
