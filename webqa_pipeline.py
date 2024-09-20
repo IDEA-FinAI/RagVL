@@ -325,7 +325,7 @@ if __name__ == "__main__":
 
     save_path = (
         "logs/webqa/"
-        + reranker_model_path.split("/")[1]
+        + reranker_model_path.split("/")[-1]
         + "_webqa_"
         + (
             "_".join(
@@ -333,11 +333,6 @@ if __name__ == "__main__":
                     attr
                     for attr in [
                         "answer_set",
-                        (
-                            f"noise{int(args.noise_ratio * 100)}"
-                            if args.noise_ratio != 0
-                            else ""
-                        ),
                         args.reranker_model,
                         args.generator_model,
                         str(args.filter)[2:],

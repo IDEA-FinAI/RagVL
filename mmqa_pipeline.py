@@ -296,7 +296,7 @@ if __name__ == "__main__":
 
     save_path = (
         "logs/mmqa/"
-        + reranker_model_path.split("/")[1]
+        + reranker_model_path.split("/")[-1]
         + "_mmqa_"
         + (
             "_".join(

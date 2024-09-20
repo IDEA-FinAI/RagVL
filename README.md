@@ -1,34 +1,37 @@
-# RagLLaVA
+# RagVL
 This is the official repo for the paper: ["MLLM Is a Strong Reranker: Advancing Multimodal Retrieval-augmented Generation via Knowledge-enhanced Reranking and Noise-injected Training"](https://arxiv.org/pdf/2407.21439).
 
-![image](https://github.com/IDEA-FinAI/RagLLaVA/blob/main/assets/framework.png)
+![image](https://github.com/IDEA-FinAI/RagVL/blob/main/assets/framework.png)
 
 ## Updates
-- [2024-08-05]: Codes of RagLLaVA released.
-- [2024-07-31]: Paper of RagLLaVA online.
+- [2024-09-20]: To better reflect the generality of our proposed method, we rename it to **RagVL**.
+- [2024-08-05]: Codes of RagVL (RagLLaVA) released.
+- [2024-07-31]: Paper of RagVL (RagLLaVA) online.
 
 ## Getting Started
 ### Environment Setup
-The required libraries for running RagLLaVA can be found in `requirements.txt`.
+The required libraries for running RagVL can be found in `requirements.txt`.
 
 ### Data Preparation
-Before running RagLLaVA, please:
+Before running RagVL, please:
 
 1. Download from [Google Drive](https://drive.google.com/drive/folders/1wY18Vbrb8yDbFSg1Te-FQIs84AYYh48Z?usp=drive_link) for **datasets** and **checkpoints**. 
 
 2. Download from [WebQA](https://github.com/WebQnA/WebQA) and [MultimodalQA](https://github.com/allenai/multimodalqa) for **image files**.
 
-3. Unzip the file. Place the `checkpoints/` and `datasets/` into `RagLLaVA/`.
+3. Unzip the file. Place the `checkpoints/` and `datasets/` into `RagVL/`.
 
-4. Place the `tasks/` into `RagLLaVA/finetune/`.
+4. Place the `tasks/` into `RagVL/finetune/`.
 
-5. Place the `MMQA_imgs/` and `train_img/` into `RagLLaVA/finetune/tasks/`.
+5. Place the `MMQA_imgs/` and `train_img/` into `RagVL/finetune/tasks/`.
 
-6. Place the `val_image/` into `RagLLaVA/datasets/`.
+6. Place the `val_image/` into `RagVL/datasets/`.
 
+## Training
+Coming soon!
 
 ## Evaluation
-To evaluate RagLLaVA on WebQA / MultimodalQA, you can employ the following command:
+To evaluate RagVL on WebQA / MultimodalQA, you can employ the following command:
 
 ```
 python webqa_pipeline.py \  # same arguments on mmqa_pipeline.py
