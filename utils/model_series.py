@@ -36,13 +36,14 @@ RERANKER_SERIES = {
         "internvl2-1b": "checkpoints/multimodalqa/internvl2_1b_1epoch-16batch_size-mmqa-reranker-caption-lora-merge",
         "internvl2-2b": "checkpoints/multimodalqa/internvl2_2b_1epoch-16batch_size-mmqa-reranker-caption-lora-merge",
         "qwenvl": "checkpoints/multimodalqa/qwen-vl-chat-1epoch-4batch_size-mmqa-reranker-caption-lora",
+        "owl": "checkpoints/multimodalqa/mplug-owl2-1epoch-8batch_size-mmqa-reranker-caption-lora",
     },
     "flickr30k": {
         "llava": "checkpoints/flickr/llava-v1.5-13b-1epoch-16batch_size-flickr30k-one-reranker-caption-lora",
         "owl": "checkpoints/flickr/mplug-owl2-1epoch-8batch_size-flickr30k-one-reranker-caption-lora",
         "qwenvl": "checkpoints/flickr/qwen-vl-chat-1epoch-4batch_size-flickr30k-one-reranker-caption-lora",
         "internvl2-1b": "checkpoints/flickr/internvl2_1b_1epoch-16batch_size-flickr30k-one-reranker-caption-lora-merge",
-        "internvl2-2b": "checkpoints/flickr/internvl2_2b_1epoch-16batch_size-flickr30k-one-reranker-caption-lora-merge",
+        "internvl2-2b": "checkpoints/internvl2_2b_1epoch-16batch_size-flickr30k-one-reranker-caption-clip-negatives-lora-merge",
     },
     "mscoco": {
         "llava": "checkpoints/coco/llava-v1.5-13b-1epoch-16batch_size-MSCOCO-one-reranker-caption-lora",
@@ -58,10 +59,12 @@ GENERATOR_SERIES = {
         "llava": "checkpoints/web/llava-v1.5-13b-2epoch-8batch_size-webqa-noise-injected-lora",
         "owl": "checkpoints/web/mplug-owl2-2epoch-8batch_size-webqa-noise-injected-lora",
         "qwenvl": "checkpoints/web/qwen-vl-chat-2epoch-2batch_size-webqa-noise-injected-lora-new",
+        "internvl2-1b": "checkpoints/web/internvl2_1b_1epoch-16batch_size-webqa-noise-injected-lora-merge",
         "internvl2-2b": "checkpoints/web/internvl2_2b_1epoch-8batch_size-webqa-noise-injected-lora-merge",
     },
     "mmqa": {
         "llava": "checkpoints/multimodalqa/llava-v1.5-13b-3epoch-8batch_size-mmqa-noise-injected-lora",
+        "internvl2-1b": "checkpoints/multimodalqa/internvl2_1b_1epoch-16batch_size-mmqa-noise-injected-lora-merge",
         "internvl2-2b": "checkpoints/multimodalqa/internvl2_2b_1epoch-16batch_size-mmqa-noise-injected-lora-merge",
         "qwenvl": "checkpoints/qwen-vl-chat-1epoch-2batch_size-mmqa-noise-injected-lora",
     },
@@ -77,11 +80,11 @@ def load_clip(args):
         bge_model = {
             "bge-base": {
                 "name": "BAAI/bge-base-en-v1.5",
-                "path": "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/utils/FlagEmbedding/bge_models/Visualized_base_en_v1.5.pth",
+                "path": "RagVL/utils/FlagEmbedding/bge_models/Visualized_base_en_v1.5.pth",
             },
             "bge-m3": {
                 "name": "BAAI/bge-m3",
-                "path": "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/utils/FlagEmbedding/bge_models/Visualized_m3.pth",
+                "path": "RagVL/utils/FlagEmbedding/bge_models/Visualized_m3.pth",
             },
         }
         model = Visualized_BGE(

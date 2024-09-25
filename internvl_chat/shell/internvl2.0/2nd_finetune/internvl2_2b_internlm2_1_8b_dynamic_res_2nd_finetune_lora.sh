@@ -10,10 +10,9 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 export MASTER_PORT=34229
 export TF_CPP_MIN_LOG_LEVEL=3
 export LAUNCHER=pytorch
-export CUDA_VISIBLE_DEVICES=1,2,3,4
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 
-OUTPUT_DIR='/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/checkpoints/internvl2_2b_1epoch-16batch_size-mmqa-reranker-caption-lora'
-# OUTPUT_DIR='/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/checkpoints/internvl2_2b_1epoch-16batch_size-mmqa-noise-injected-lora'
+OUTPUT_DIR='RagVL/checkpoints/internvl2_2b_1epoch-16batch_size-flickr30k-one-reranker-caption-clip-negatives-lora'
 
 if [ ! -d "$OUTPUT_DIR" ]; then
   mkdir -p "$OUTPUT_DIR"
@@ -30,11 +29,11 @@ torchrun \
   --master_addr=127.0.0.1 \
   --nproc_per_node=${GPUS} \
   --master_port=${MASTER_PORT} \
-  /data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/InternVL/internvl_chat/internvl/train/internvl_chat_finetune.py \
+  RagVL/internvl_chat/internvl/train/internvl_chat_finetune.py \
   --model_name_or_path "OpenGVLab/InternVL2-2B" \
   --conv_style "internlm2-chat" \
   --output_dir ${OUTPUT_DIR} \
-  --meta_path "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/InternVL/internvl_chat/shell/data/internvl_2_finetune_mmqa_rerank.json" \
+  --meta_path "RagVL/internvl_chat/shell/data/internvl_2_finetune_flickr30k_rerank.json" \
   --overwrite_output_dir True \
   --force_image_size 448 \
   --max_dynamic_patch 6 \
@@ -66,6 +65,6 @@ torchrun \
   --dynamic_image_size True \
   --use_thumbnail True \
   --ps_version 'v2' \
-  --deepspeed "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/InternVL/internvl_chat/zero_stage1_config.json" \
+  --deepspeed "RagVL/internvl_chat/zero_stage1_config.json" \
   --report_to "tensorboard" \
   2>&1 | tee -a "${OUTPUT_DIR}/training_log.txt"

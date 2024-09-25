@@ -1,7 +1,7 @@
 {
     "webqa_rerank": {
-        "root": "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/finetune/tasks",
-        "annotation": "/data/FinAi_Mapping_Knowledge/chenzhanpeng/RagLLaVA/finetune/tasks/MSCOCO_one_train_rerank_internvl.jsonl",
+        "root": "RagVL/finetune/tasks",
+        "annotation": "RagVL/finetune/tasks/MSCOCO_one_train_rerank_internvl.jsonl",
         "data_augment": false,
         "repeat_time": 1,
         "length": 40000
