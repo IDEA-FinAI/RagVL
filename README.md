@@ -10,7 +10,7 @@ This is the official repo for the paper: ["MLLM Is a Strong Reranker: Advancing 
 
 ## Getting Started
 ### Environment Setup
-The required libraries for running RagVL can be found in `requirements.txt`.
+The required libraries for running RagVL can be found in `requirements.txt`. We recommend following [LLaVA](https://github.com/haotian-liu/LLaVA) to configure your environment.
 
 ### Data Preparation
 Before running RagVL, please:
@@ -28,7 +28,29 @@ Before running RagVL, please:
 6. Place the `val_image/` into `RagVL/datasets/`.
 
 ## Training
-Coming soon!
+1. Reranker
+
+| Models | Global Batch Size | Epochs |
+| --- | ---: | ---: | 
+| LLaVA-v1.5-13B | 16 | 2 (WebQA) / 1 (others) |
+| Qwen-VL-Chat | 16 | 2 (WebQA) / 1 (others) |
+| mPLUG-Owl2 | 16 | 2 (WebQA) / 1 (others) |
+| InternVL2-1B | 16 | 1 |
+| InternVL2-2B | 16 | 1 |
+
+2. Generator
+
+| Models | Global Batch Size | Epochs |
+| --- | ---: | ---: | 
+| LLaVA-v1.5-13B | 16 | 2 (WebQA) / 3 (MMQA) |
+| InternVL2-1B | 16 | 1 |
+| InternVL2-2B | 16 | 1 |
+
+Except for the above two hyperparameters, the others follow the default settings from different models.
+
+To finetune LLaVA-v1.5-13B, Qwen-VL-Chat, and mPLUG-Owl2, find the corresponding finetune script in `RagVL/finetune/scripts/`.
+
+To finetune InternVL2-1B and InternVL2-2B, find the corresponding finetune script in `RagVL/internvl_chat/shell/internvl2.0/2nd_finetune`.
 
 ## Evaluation
 To evaluate RagVL on WebQA / MultimodalQA, you can employ the following command:
