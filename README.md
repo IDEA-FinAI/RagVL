@@ -4,16 +4,15 @@ The required libraries for running RagVL can be found in `requirements.txt`. We 
 
 ### Data Preparation
 Before running RagVL, please:
+1. Download from [WebQA](https://github.com/WebQnA/WebQA) and [MultimodalQA](https://github.com/allenai/multimodalqa) for **image files**.
 
-2. Download from [WebQA](https://github.com/WebQnA/WebQA) and [MultimodalQA](https://github.com/allenai/multimodalqa) for **image files**.
+2. Unzip the file. Place the `checkpoints/` and `datasets/` into `RagVL/`.
 
-3. Unzip the file. Place the `checkpoints/` and `datasets/` into `RagVL/`.
+3. Place the `tasks/` into `RagVL/finetune/`.
 
-4. Place the `tasks/` into `RagVL/finetune/`.
+4. Place the `MMQA_imgs/` and `train_img/` into `RagVL/finetune/tasks/`.
 
-5. Place the `MMQA_imgs/` and `train_img/` into `RagVL/finetune/tasks/`.
-
-6. Place the `val_image/` into `RagVL/datasets/`.
+5. Place the `val_image/` into `RagVL/datasets/`.
 
 ## Training
 1. Reranker
