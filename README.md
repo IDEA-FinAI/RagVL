@@ -5,8 +5,6 @@ The required libraries for running RagVL can be found in `requirements.txt`. We 
 ### Data Preparation
 Before running RagVL, please:
 
-1. Download from [Google Drive](https://drive.google.com/drive/folders/1wY18Vbrb8yDbFSg1Te-FQIs84AYYh48Z?usp=drive_link) for **datasets** and **checkpoints**. 
-
 2. Download from [WebQA](https://github.com/WebQnA/WebQA) and [MultimodalQA](https://github.com/allenai/multimodalqa) for **image files**.
 
 3. Unzip the file. Place the `checkpoints/` and `datasets/` into `RagVL/`.
